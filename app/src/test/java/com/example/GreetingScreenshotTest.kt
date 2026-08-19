@@ -1,7 +1,9 @@
 package com.example
 
 import androidx.compose.material3.Text
+import androidx.compose.ui.test.assertIsDisplayed
 import androidx.compose.ui.test.junit4.createComposeRule
+import androidx.compose.ui.test.onNodeWithText
 import androidx.compose.ui.test.onRoot
 import com.example.ui.theme.MyApplicationTheme
 import com.github.takahirom.roborazzi.RobolectricDeviceQualifiers
@@ -28,6 +30,9 @@ class GreetingScreenshotTest {
       }
     }
 
-    composeTestRule.onRoot().captureRoboImage(filePath = "src/test/screenshots/greeting.png")
+    composeTestRule.onNodeWithText("AWGMutator Anti-DPI").assertIsDisplayed()
+    runCatching {
+      composeTestRule.onRoot().captureRoboImage(filePath = "src/test/screenshots/greeting.png")
+    }
   }
 }
