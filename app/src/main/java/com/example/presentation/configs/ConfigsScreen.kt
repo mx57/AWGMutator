@@ -32,6 +32,7 @@ import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Difference
 import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.Explore
+import androidx.compose.material.icons.filled.Extension
 import androidx.compose.material.icons.filled.FileUpload
 import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.NetworkCheck
@@ -41,7 +42,7 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Share
 import androidx.compose.material.icons.filled.Speed
-import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
@@ -76,6 +77,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
@@ -121,7 +123,8 @@ fun ConfigsScreen(
         } else {
             configs.filter {
                 it.name.contains(uiState.searchQuery, ignoreCase = true) ||
-                        it.endpoint.contains(uiState.searchQuery, ignoreCase = true)
+                        it.endpoint.contains(uiState.searchQuery, ignoreCase = true) ||
+                        it.originType.contains(uiState.searchQuery, ignoreCase = true)
             }
         }
     }
@@ -133,15 +136,15 @@ fun ConfigsScreen(
                     onClick = { viewModel.showImportDialog(true) },
                     containerColor = MaterialTheme.colorScheme.surfaceVariant,
                     contentColor = CyberCyan,
-                    modifier = Modifier.padding(bottom = 8.dp).testTag("import_fab")
+                    modifier = Modifier.padding(bottom = 8.dp).size(48.dp).testTag("import_fab")
                 ) {
-                    Icon(Icons.Default.FileUpload, contentDescription = "Import Config")
+                    Icon(Icons.Default.FileUpload, contentDescription = "Import Config", modifier = Modifier.size(20.dp))
                 }
                 FloatingActionButton(
                     onClick = { viewModel.showAddDialog(true) },
                     containerColor = CyberCyan,
                     contentColor = MaterialTheme.colorScheme.onPrimary,
-                    modifier = Modifier.testTag("add_custom_fab")
+                    modifier = Modifier.size(52.dp).testTag("add_custom_fab")
                 ) {
                     Icon(Icons.Default.Add, contentDescription = "Add AWG Config")
                 }
@@ -152,41 +155,41 @@ fun ConfigsScreen(
             modifier = Modifier
                 .fillMaxSize()
                 .padding(paddingValues)
-                .padding(horizontal = 16.dp, vertical = 12.dp)
+                .padding(horizontal = 12.dp, vertical = 8.dp)
         ) {
             // Header
             Row(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .padding(bottom = 10.dp),
+                    .padding(bottom = 6.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Column {
                     Text(
-                        text = "Configurations",
-                        style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
+                        text = "Configurations (${configs.size})",
+                        style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                         color = MaterialTheme.colorScheme.onBackground
                     )
                     Text(
-                        text = "${configs.size} Profiles stored in local database",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        text = if (uiState.isRootAvailable) "⚡ Root Engine Ready" else "🔒 Standard VpnService",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = if (uiState.isRootAvailable) NeonGreen else MaterialTheme.colorScheme.onSurfaceVariant
                     )
                 }
 
                 Button(
                     onClick = { viewModel.showWarpDialog(true) },
                     colors = ButtonDefaults.buttonColors(containerColor = CyberPurple),
-                    shape = RoundedCornerShape(10.dp),
-                    modifier = Modifier.testTag("generate_warp_header_button")
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.height(34.dp).testTag("generate_warp_header_button")
                 ) {
                     if (uiState.isGenerating) {
-                        CircularProgressIndicator(modifier = Modifier.size(14.dp), color = MaterialTheme.colorScheme.onPrimary)
+                        CircularProgressIndicator(modifier = Modifier.size(12.dp), color = MaterialTheme.colorScheme.onPrimary)
                     } else {
-                        Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(14.dp))
                         Spacer(modifier = Modifier.width(4.dp))
-                        Text("New WARP", style = MaterialTheme.typography.labelMedium)
+                        Text("+ WARP", style = MaterialTheme.typography.labelMedium)
                     }
                 }
             }
@@ -196,22 +199,22 @@ fun ConfigsScreen(
                 modifier = Modifier
                     .fillMaxWidth()
                     .horizontalScroll(rememberScrollState())
-                    .padding(bottom = 8.dp),
-                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    .padding(bottom = 6.dp),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
             ) {
                 FilterChip(
                     selected = false,
                     onClick = { viewModel.showScannerDialog(true) },
-                    label = { Text("🌐 Endpoints & Discovery", style = MaterialTheme.typography.labelSmall) },
-                    leadingIcon = { Icon(Icons.Default.Explore, contentDescription = null, modifier = Modifier.size(14.dp), tint = CyberCyan) },
+                    label = { Text("🌐 Endpoints & Ping", style = MaterialTheme.typography.labelSmall) },
+                    leadingIcon = { Icon(Icons.Default.Explore, contentDescription = null, modifier = Modifier.size(13.dp), tint = CyberCyan) },
                     colors = FilterChipDefaults.filterChipColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                 )
 
                 FilterChip(
                     selected = false,
                     onClick = { viewModel.showDnsSelectionDialog(true) },
-                    label = { Text("🛡️ DNS (${uiState.selectedDnsList.size} selected)", style = MaterialTheme.typography.labelSmall) },
-                    leadingIcon = { Icon(Icons.Default.Dns, contentDescription = null, modifier = Modifier.size(14.dp), tint = NeonGreen) },
+                    label = { Text("🛡️ DNS (${uiState.selectedDnsList.size})", style = MaterialTheme.typography.labelSmall) },
+                    leadingIcon = { Icon(Icons.Default.Dns, contentDescription = null, modifier = Modifier.size(13.dp), tint = NeonGreen) },
                     colors = FilterChipDefaults.filterChipColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                 )
 
@@ -219,7 +222,7 @@ fun ConfigsScreen(
                     selected = false,
                     onClick = { viewModel.showSniSelectionDialog(true) },
                     label = { Text("🎭 SNI (${uiState.selectedSniDomain})", style = MaterialTheme.typography.labelSmall) },
-                    leadingIcon = { Icon(Icons.Default.Language, contentDescription = null, modifier = Modifier.size(14.dp), tint = CyberPurple) },
+                    leadingIcon = { Icon(Icons.Default.Language, contentDescription = null, modifier = Modifier.size(13.dp), tint = CyberPurple) },
                     colors = FilterChipDefaults.filterChipColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                 )
             }
@@ -228,15 +231,16 @@ fun ConfigsScreen(
             OutlinedTextField(
                 value = uiState.searchQuery,
                 onValueChange = { viewModel.setSearchQuery(it) },
-                placeholder = { Text("Search profiles by name or IP...") },
-                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = CyberCyan) },
+                placeholder = { Text("Filter by name, IP or type (Gen, WARP, Manual)...", fontSize = 12.sp) },
+                leadingIcon = { Icon(Icons.Default.Search, contentDescription = null, tint = CyberCyan, modifier = Modifier.size(16.dp)) },
                 modifier = Modifier
                     .fillMaxWidth()
+                    .height(48.dp)
                     .testTag("config_search_bar"),
                 singleLine = true
             )
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
             if (filteredConfigs.isEmpty()) {
                 Box(
@@ -250,11 +254,11 @@ fun ConfigsScreen(
                             Icons.Default.Security,
                             contentDescription = null,
                             tint = MaterialTheme.colorScheme.outline,
-                            modifier = Modifier.size(56.dp)
+                            modifier = Modifier.size(48.dp)
                         )
-                        Spacer(modifier = Modifier.height(8.dp))
+                        Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = "No configurations found",
+                            text = "No profiles found",
                             style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -268,13 +272,16 @@ fun ConfigsScreen(
             } else {
                 LazyColumn(
                     modifier = Modifier.fillMaxSize(),
-                    verticalArrangement = Arrangement.spacedBy(10.dp)
+                    verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(filteredConfigs, key = { it.id }) { config ->
-                        ConfigCard(
+                        CompactConfigCard(
                             config = config,
                             isTesting = uiState.testingConfigId == config.id,
+                            isRootAvailable = uiState.isRootAvailable,
                             onTest = { viewModel.testConfigEndpoint(config) },
+                            onApplyRoot = { viewModel.applyRootTunnel(config) },
+                            onExportMagisk = { viewModel.exportMagiskModule(context, config) },
                             onDelete = { viewModel.deleteConfig(config.id) },
                             onDuplicate = { viewModel.duplicateConfig(config) },
                             onShare = { viewModel.shareConfigFile(context, config) },
@@ -283,7 +290,7 @@ fun ConfigsScreen(
                         )
                     }
                     item {
-                        Spacer(modifier = Modifier.height(80.dp))
+                        Spacer(modifier = Modifier.height(72.dp))
                     }
                 }
             }
@@ -360,10 +367,13 @@ fun ConfigsScreen(
 }
 
 @Composable
-fun ConfigCard(
+fun CompactConfigCard(
     config: AwgConfig,
     isTesting: Boolean,
+    isRootAvailable: Boolean,
     onTest: () -> Unit,
+    onApplyRoot: () -> Unit,
+    onExportMagisk: () -> Unit,
     onDelete: () -> Unit,
     onDuplicate: () -> Unit,
     onShare: () -> Unit,
@@ -374,59 +384,78 @@ fun ConfigCard(
         modifier = Modifier
             .fillMaxWidth()
             .testTag("config_card_${config.id}"),
-        shape = RoundedCornerShape(12.dp),
+        shape = RoundedCornerShape(10.dp),
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
-        Column(modifier = Modifier.padding(14.dp)) {
+        Column(modifier = Modifier.padding(10.dp)) {
+            // Lineage Badge & Timestamp Header
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    OriginBadge(config.originType, config.evolutionGeneration)
                     Text(
-                        text = config.name,
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis
-                    )
-                    Text(
-                        text = config.endpoint,
-                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
-                        color = CyberCyan
+                        text = "📅 ${config.formattedDateTime}",
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.outline
                     )
                 }
 
-                // Latency Badge
                 if (config.lastPingMs != null) {
                     Surface(
                         color = NeonGreen.copy(alpha = 0.15f),
-                        shape = RoundedCornerShape(6.dp),
-                        modifier = Modifier.padding(start = 6.dp)
+                        shape = RoundedCornerShape(4.dp)
                     ) {
                         Text(
                             text = "${config.lastPingMs} ms",
                             style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
                             color = NeonGreen,
-                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
                         )
                     }
                 }
             }
 
-            Spacer(modifier = Modifier.height(10.dp))
+            Spacer(modifier = Modifier.height(4.dp))
 
-            // Anti-DPI Genes Preview
+            // Profile Title and Endpoint
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = config.name,
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, fontSize = 15.sp),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.weight(1f)
+                )
+                Text(
+                    text = config.endpoint,
+                    style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace, fontSize = 12.sp),
+                    color = CyberCyan
+                )
+            }
+
+            Spacer(modifier = Modifier.height(6.dp))
+
+            // Compact Genes & Obfuscation parameters
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(4.dp)
             ) {
                 ParamBadge(label = "Jc", value = "${config.jc}")
-                ParamBadge(label = "Jitter", value = "${config.jmin}-${config.jmax}")
+                ParamBadge(label = "Jit", value = "${config.jmin}-${config.jmax}")
                 ParamBadge(label = "S1", value = "${config.s1}")
                 ParamBadge(label = "H1", value = "${config.h1}")
+                ParamBadge(label = "MTU", value = "${config.mtu}")
                 if (!config.sni.isNullOrBlank()) {
                     ParamBadge(label = "SNI", value = config.sni)
                 }
@@ -435,45 +464,67 @@ fun ConfigCard(
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(8.dp))
 
-            // Action Row
+            // Compact Action Buttons Row
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically
             ) {
-                Button(
-                    onClick = onTest,
-                    enabled = !isTesting,
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.testTag("test_endpoint_button_${config.id}")
-                ) {
-                    if (isTesting) {
-                        CircularProgressIndicator(modifier = Modifier.size(14.dp), color = CyberCyan)
-                    } else {
-                        Icon(Icons.Default.Speed, contentDescription = null, modifier = Modifier.size(16.dp), tint = CyberCyan)
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("Test Ping", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface)
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    Button(
+                        onClick = onTest,
+                        enabled = !isTesting,
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                        shape = RoundedCornerShape(6.dp),
+                        modifier = Modifier.height(30.dp).testTag("test_endpoint_button_${config.id}")
+                    ) {
+                        if (isTesting) {
+                            CircularProgressIndicator(modifier = Modifier.size(12.dp), color = CyberCyan)
+                        } else {
+                            Icon(Icons.Default.Speed, contentDescription = null, modifier = Modifier.size(13.dp), tint = CyberCyan)
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text("Ping", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface)
+                        }
+                    }
+
+                    if (isRootAvailable) {
+                        Button(
+                            onClick = onApplyRoot,
+                            colors = ButtonDefaults.buttonColors(containerColor = CyberPurple.copy(alpha = 0.8f)),
+                            shape = RoundedCornerShape(6.dp),
+                            modifier = Modifier.height(30.dp).testTag("root_tunnel_button_${config.id}")
+                        ) {
+                            Icon(Icons.Default.Terminal, contentDescription = null, modifier = Modifier.size(13.dp))
+                            Spacer(modifier = Modifier.width(3.dp))
+                            Text("Root Apply", style = MaterialTheme.typography.labelSmall)
+                        }
+                    }
+
+                    IconButton(
+                        onClick = onExportMagisk,
+                        modifier = Modifier.size(30.dp).testTag("magisk_export_${config.id}")
+                    ) {
+                        Icon(Icons.Default.Extension, contentDescription = "Magisk Module", tint = NeonGreen, modifier = Modifier.size(16.dp))
                     }
                 }
 
-                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
-                    IconButton(onClick = onShowQr, modifier = Modifier.testTag("qr_button_${config.id}")) {
-                        Icon(Icons.Default.QrCode, contentDescription = "QR Code", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
+                    IconButton(onClick = onShowQr, modifier = Modifier.size(28.dp).testTag("qr_button_${config.id}")) {
+                        Icon(Icons.Default.QrCode, contentDescription = "QR Code", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
                     }
-                    IconButton(onClick = onShowExport, modifier = Modifier.testTag("export_button_${config.id}")) {
-                        Icon(Icons.Default.Difference, contentDescription = "View Conf", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    IconButton(onClick = onShowExport, modifier = Modifier.size(28.dp).testTag("export_button_${config.id}")) {
+                        Icon(Icons.Default.Difference, contentDescription = "View Conf", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
                     }
-                    IconButton(onClick = onShare, modifier = Modifier.testTag("share_button_${config.id}")) {
-                        Icon(Icons.Default.Share, contentDescription = "Share", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    IconButton(onClick = onShare, modifier = Modifier.size(28.dp).testTag("share_button_${config.id}")) {
+                        Icon(Icons.Default.Share, contentDescription = "Share", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
                     }
-                    IconButton(onClick = onDuplicate, modifier = Modifier.testTag("duplicate_button_${config.id}")) {
-                        Icon(Icons.Default.ContentCopy, contentDescription = "Duplicate", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    IconButton(onClick = onDuplicate, modifier = Modifier.size(28.dp).testTag("duplicate_button_${config.id}")) {
+                        Icon(Icons.Default.ContentCopy, contentDescription = "Duplicate", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
                     }
-                    IconButton(onClick = onDelete, modifier = Modifier.testTag("delete_button_${config.id}")) {
-                        Icon(Icons.Default.Delete, contentDescription = "Delete", tint = DangerRed)
+                    IconButton(onClick = onDelete, modifier = Modifier.size(28.dp).testTag("delete_button_${config.id}")) {
+                        Icon(Icons.Default.Delete, contentDescription = "Delete", tint = DangerRed, modifier = Modifier.size(16.dp))
                     }
                 }
             }
@@ -482,20 +533,44 @@ fun ConfigCard(
 }
 
 @Composable
-fun ParamBadge(label: String, value: String) {
+fun OriginBadge(originType: String, generation: Int?) {
+    val (label, bg, fg) = when (originType) {
+        "EVOLUTION" -> Triple(if (generation != null) "🧬 Gen #$generation" else "🧬 Evolved", CyberCyan.copy(alpha = 0.2f), CyberCyan)
+        "WARP" -> Triple("🌐 WARP", CyberPurple.copy(alpha = 0.2f), CyberPurple)
+        "HYBRID" -> Triple("⚡ Hybrid", NeonGreen.copy(alpha = 0.2f), NeonGreen)
+        "IMPORTED" -> Triple("📥 Imported", Color(0xFFFFA000).copy(alpha = 0.2f), Color(0xFFFFA000))
+        else -> Triple("✍️ Manual", MaterialTheme.colorScheme.surfaceVariant, MaterialTheme.colorScheme.onSurfaceVariant)
+    }
+
     Surface(
-        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        color = bg,
         shape = RoundedCornerShape(4.dp)
     ) {
-        Row(modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)) {
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+            color = fg,
+            modifier = Modifier.padding(horizontal = 5.dp, vertical = 1.dp)
+        )
+    }
+}
+
+@Composable
+fun ParamBadge(label: String, value: String) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f),
+        shape = RoundedCornerShape(4.dp)
+    ) {
+        Row(modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)) {
             Text(
-                text = "$label: ",
-                style = MaterialTheme.typography.labelSmall,
+                text = "$label:",
+                style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
                 color = MaterialTheme.colorScheme.outline
             )
+            Spacer(modifier = Modifier.width(2.dp))
             Text(
                 text = value,
-                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 10.sp),
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis
@@ -729,7 +804,6 @@ fun EndpointScannerDialog(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Country Selector
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -751,7 +825,6 @@ fun EndpointScannerDialog(
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                // Action Buttons
                 Row(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
@@ -785,7 +858,6 @@ fun EndpointScannerDialog(
 
                 Spacer(modifier = Modifier.height(10.dp))
 
-                // Endpoints List
                 LazyColumn(
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(6.dp)

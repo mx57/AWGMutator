@@ -1,5 +1,8 @@
 package com.example.domain.model
 
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
 import java.util.UUID
 
 /**
@@ -35,10 +38,19 @@ data class AwgConfig(
     val persistentKeepalive: Int = 25,
     val isWarp: Boolean = false,
     val reserved: String? = null,
+    val originType: String = "MANUAL", // MANUAL, WARP, EVOLUTION, IMPORTED, HYBRID
+    val evolutionGeneration: Int? = null,
+    val evolutionBatchId: String? = null,
     val createdAt: Long = System.currentTimeMillis(),
     val lastPingMs: Long? = null,
     val lastFitness: Double? = null
 ) {
+    val formattedDateTime: String
+        get() {
+            val sdf = SimpleDateFormat("dd.MM.yyyy HH:mm", Locale.getDefault())
+            return sdf.format(Date(createdAt))
+        }
+
     /**
      * Converts configuration into standard WireGuard / AmneziaWG .conf string format.
      */

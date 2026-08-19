@@ -142,7 +142,9 @@ object ConfigParser {
                 endpoint = endpoint,
                 persistentKeepalive = persistentKeepalive,
                 isWarp = isWarp,
-                reserved = reserved
+                reserved = reserved,
+                originType = "IMPORTED",
+                createdAt = System.currentTimeMillis()
             )
         }
     }

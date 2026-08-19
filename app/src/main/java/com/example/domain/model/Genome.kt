@@ -8,17 +8,17 @@ import java.util.UUID
  */
 data class Genome(
     val id: String = UUID.randomUUID().toString(),
-    val jc: Int,          // 0..10
-    val jmin: Int,        // 32..1024
-    val jmax: Int,        // jmin..1024
-    val s1: Int,          // 0..64
-    val s2: Int,          // 0..64
-    val s3: Int,          // 0..64
-    val s4: Int,          // 0..32
-    val h1: Long,         // 0..4_294_967_295
-    val h2: Long,         // 0..4_294_967_295, != h1
-    val h3: Long,         // 0..4_294_967_295, != h1, != h2
-    val h4: Long,         // 0..4_294_967_295, != h1, != h2, != h3
+    val jc: Int = 4,          // 0..10
+    val jmin: Int = 40,        // 32..1024
+    val jmax: Int = 70,        // jmin..1024
+    val s1: Int = 20,          // 0..64
+    val s2: Int = 30,          // 0..64
+    val s3: Int = 40,          // 0..64
+    val s4: Int = 10,          // 0..32
+    val h1: Long = 1000000001L,         // 0..4_294_967_295
+    val h2: Long = 2000000002L,         // 0..4_294_967_295, != h1
+    val h3: Long = 3000000003L,         // 0..4_294_967_295, != h1, != h2
+    val h4: Long = 4000000004L,         // 0..4_294_967_295, != h1, != h2, != h3
     val i1: String? = null,
     val sni: String? = null,
     val endpoint: String? = null,
@@ -35,7 +35,7 @@ data class Genome(
     fun applyToConfig(base: AwgConfig): AwgConfig {
         return base.copy(
             id = UUID.randomUUID().toString(),
-            name = "${base.name} [Gen $generation - Fit: ${"%.2f".format(fitness)}]",
+            name = "🧬 Evolved AWG Gen $generation (${"%.1f".format(fitness)})",
             jc = jc,
             jmin = jmin,
             jmax = jmax,
@@ -52,6 +52,9 @@ data class Genome(
             endpoint = endpoint ?: base.endpoint,
             mtu = mtu,
             dns = dns.ifBlank { base.dns },
+            originType = "EVOLUTION",
+            evolutionGeneration = generation,
+            createdAt = System.currentTimeMillis(),
             lastPingMs = avgPingMs,
             lastFitness = fitness
         )

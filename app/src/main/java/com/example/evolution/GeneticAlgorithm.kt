@@ -43,7 +43,7 @@ data class EvolutionProgress(
 
 /**
  * Robust Genetic Algorithm engine managing the evolutionary state machine with
- * [GeneticDiagnostics] for automated stagnation detection, hypermutation, and island model migration.
+ * multi-config seed pooling, stagnation detection, hypermutation, and island model migration.
  */
 class GeneticAlgorithm(
     private val pingTester: PingTester,
@@ -66,7 +66,7 @@ class GeneticAlgorithm(
     }
 
     suspend fun runEvolution(
-        baseConfig: AwgConfig,
+        seedConfigs: List<AwgConfig>,
         populationSize: Int = 12,
         maxGenerations: Int = 15,
         targetUrls: List<String> = pingTester.defaultTargets,
@@ -90,25 +90,43 @@ class GeneticAlgorithm(
             settings = settings
         )
 
-        val seedGenome = Genome(
-            jc = baseConfig.jc,
-            jmin = baseConfig.jmin,
-            jmax = baseConfig.jmax,
-            s1 = baseConfig.s1,
-            s2 = baseConfig.s2,
-            s3 = baseConfig.s3,
-            s4 = baseConfig.s4,
-            h1 = baseConfig.h1,
-            h2 = baseConfig.h2,
-            h3 = baseConfig.h3,
-            h4 = baseConfig.h4,
-            i1 = baseConfig.i1,
-            sni = baseConfig.sni,
-            endpoint = baseConfig.endpoint,
-            mtu = baseConfig.mtu
-        ).validated()
+        // Convert all provided configs to seed genomes
+        val seedGenomes = seedConfigs.map { cfg ->
+            Genome(
+                jc = cfg.jc,
+                jmin = cfg.jmin,
+                jmax = cfg.jmax,
+                s1 = cfg.s1,
+                s2 = cfg.s2,
+                s3 = cfg.s3,
+                s4 = cfg.s4,
+                h1 = cfg.h1,
+                h2 = cfg.h2,
+                h3 = cfg.h3,
+                h4 = cfg.h4,
+                i1 = cfg.i1,
+                sni = cfg.sni,
+                endpoint = cfg.endpoint,
+                mtu = cfg.mtu
+            ).validated()
+        }.ifEmpty {
+            listOf(Genome().validated())
+        }
 
-        var population = populationManager.createInitialPopulation(seedGenome)
+        val primarySeed = seedGenomes.first()
+        val baseConfig = seedConfigs.firstOrNull() ?: AwgConfig(
+            name = "Base Seed",
+            privateKey = "a".repeat(43) + "="
+        )
+
+        // Create population from the diverse multi-config seed pool
+        var population = mutableListOf<Genome>()
+        for (i in 0 until effectivePopSize) {
+            val seed = seedGenomes[i % seedGenomes.size]
+            val mutatedSeed = if (i < seedGenomes.size) seed else mutationStrategy.mutate(seed)
+            population.add(mutatedSeed)
+        }
+
         var overallBest: Genome? = null
         val history = mutableListOf<Pair<Int, Double>>()
         val logs = mutableListOf<String>()
@@ -121,7 +139,7 @@ class GeneticAlgorithm(
             maxGenerations = effectiveGens,
             currentGenomeIndex = 0,
             populationSize = effectivePopSize,
-            logs = listOf("Initializing Genetic Evolution with ${population.size} candidate genomes..."),
+            logs = listOf("Seeded ${seedGenomes.size} profile(s) into genetic pool of ${population.size} candidate genomes..."),
             generationHistory = emptyList()
         )
 
@@ -135,10 +153,9 @@ class GeneticAlgorithm(
                     if (isCancelled) break
 
                     val candidateIndex = idx + 1
-                    val logEntry = "Gen $generation | Candidate #$candidateIndex (Jc=${candidateGenome.jc}, S1=${candidateGenome.s1}, MTU=${candidateGenome.mtu})..."
+                    val logEntry = "Gen $generation | Specimen #$candidateIndex (Jc=${candidateGenome.jc}, S1=${candidateGenome.s1}, MTU=${candidateGenome.mtu})..."
                     logs.add(0, logEntry)
 
-                    // Emit StateFlow progress for candidate start
                     _progress.value = _progress.value.copy(
                         phase = EvolutionPhase.EVALUATING,
                         currentGeneration = generation,
@@ -149,7 +166,6 @@ class GeneticAlgorithm(
                     // Evaluate fitness
                     val rawFitnessResult = evaluator.evaluate(candidateGenome, baseConfig, targetUrls)
 
-                    // State machine validation
                     val validatedFitness = sanitizeFitness(rawFitnessResult.fitnessScore)
                     val validatedPing = if (rawFitnessResult.avgPingMs in 1..10000L) rawFitnessResult.avgPingMs else 50L
                     val validatedSuccess = rawFitnessResult.successRate.coerceIn(0.0, 1.0)
@@ -171,7 +187,6 @@ class GeneticAlgorithm(
                         recentProbes = probesHistory.takeLast(24)
                     )
 
-                    // Persist generation step to database
                     evolutionRepository.recordLog(
                         EvolutionLogEntity(
                             sessionId = sessionId,
@@ -196,10 +211,9 @@ class GeneticAlgorithm(
                 if (isCancelled) break
 
                 if (evaluatedPopulation.isEmpty()) {
-                    evaluatedPopulation.add(seedGenome.copy(fitness = 10.0, generation = generation))
+                    evaluatedPopulation.add(primarySeed.copy(fitness = 10.0, generation = generation))
                 }
 
-                // Sort by fitness descending
                 val sorted = evaluatedPopulation.sortedByDescending { it.fitness }
                 val currentGenBest = sorted.first()
 
@@ -209,18 +223,17 @@ class GeneticAlgorithm(
 
                 history.add(Pair(generation, overallBest.fitness))
 
-                // Genetic Diagnostics Observation: Check for Stagnation / Island Migration
                 val islandImmigrants = diagnostics.evaluateGeneration(
                     generation = generation,
                     currentBestFitness = currentGenBest.fitness,
                     populationSize = effectivePopSize,
-                    seedGenome = seedGenome
+                    seedGenome = primarySeed
                 )
 
                 val diagnosticNote = when {
                     islandImmigrants != null -> {
-                        logs.add(0, "⚠️ Stagnation detected across 3 gens! Triggering Island Migration (${islandImmigrants.size} immigrants) & Hypermutation (rate: ${diagnostics.currentMutationRate})")
-                        "Island Migration (${islandImmigrants.size} immigrants) + Hypermutation Active"
+                        logs.add(0, "⚠️ Stagnation detected! Triggering Island Migration (${islandImmigrants.size} immigrants) & Hypermutation")
+                        "Island Migration (${islandImmigrants.size} immigrants) + Hypermutation"
                     }
                     diagnostics.isHypermutationActive -> {
                         "Hypermutation Active (Rate: ${(diagnostics.currentMutationRate * 100).toInt()}%)"
@@ -228,16 +241,14 @@ class GeneticAlgorithm(
                     else -> null
                 }
 
-                // Update mutation strategy if hypermutation is active
                 mutationStrategy = MutationStrategy(
                     mutationRate = diagnostics.currentMutationRate,
                     magnitude = diagnostics.currentMagnitude
                 )
 
-                val genSummary = "✓ Gen $generation Complete | Top: ${"%.2f".format(currentGenBest.fitness)} | Latency: ${currentGenBest.avgPingMs}ms | Anti-DPI Jc: ${currentGenBest.jc}"
+                val genSummary = "✓ Gen $generation Complete | Top Fitness: ${"%.2f".format(currentGenBest.fitness)} | Latency: ${currentGenBest.avgPingMs}ms | Jc: ${currentGenBest.jc}"
                 logs.add(0, genSummary)
 
-                // Emit StateFlow progress for generation completion
                 _progress.value = _progress.value.copy(
                     phase = EvolutionPhase.GENERATION_COMPLETE,
                     currentGeneration = generation,
@@ -254,18 +265,17 @@ class GeneticAlgorithm(
 
                 if (generation == effectiveGens) break
 
-                // Transition phase: Breeding next generation
                 _progress.value = _progress.value.copy(phase = EvolutionPhase.BREEDING)
 
                 val nextGen = mutableListOf<Genome>()
 
-                // 1. Elitism: Retain top 2 genomes unaltered
+                // 1. Elitism: Top 2 preserved
                 nextGen.add(sorted[0].copy(generation = generation + 1).validated())
                 if (sorted.size > 1) {
                     nextGen.add(sorted[1].copy(generation = generation + 1).validated())
                 }
 
-                // 2. Island model integration if immigrants exist
+                // 2. Island model integration
                 if (islandImmigrants != null) {
                     for (immigrant in islandImmigrants) {
                         if (nextGen.size < effectivePopSize) {
@@ -274,7 +284,7 @@ class GeneticAlgorithm(
                     }
                 }
 
-                // 3. Selection, Crossover & Mutation for remaining slots
+                // 3. Selection, Crossover & Mutation
                 while (nextGen.size < effectivePopSize) {
                     val parentA = populationManager.selectParent(sorted)
                     val parentB = populationManager.selectParent(sorted)
@@ -296,7 +306,7 @@ class GeneticAlgorithm(
             _progress.value = _progress.value.copy(
                 isRunning = false,
                 phase = if (isCancelled) EvolutionPhase.CANCELLED else EvolutionPhase.COMPLETED,
-                logs = (listOf("Genetic Evolution complete. Best Anti-DPI profile converged.") + logs).take(60)
+                logs = (listOf("🧬 Evolution run finalized. Superior Anti-DPI parameters selected.") + logs).take(60)
             )
         }
 

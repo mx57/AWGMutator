@@ -6,10 +6,8 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.App
 import com.example.domain.model.AwgConfig
-import com.example.domain.model.DnsCatalog
 import com.example.domain.model.EndpointCatalog
 import com.example.domain.model.EndpointItem
-import com.example.domain.model.SniCatalog
 import com.example.domain.repository.ConfigRepository
 import com.example.domain.usecase.EndpointScannerUseCase
 import com.example.domain.usecase.GenerateAwgConfigUseCase
@@ -17,6 +15,8 @@ import com.example.domain.usecase.GenerateHybridWarpAwgUseCase
 import com.example.domain.usecase.GenerateWarpConfigUseCase
 import com.example.domain.usecase.ObfuscationPreset
 import com.example.util.ConfigParser
+import com.example.util.MagiskModuleGenerator
+import com.example.util.RootRunner
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -29,6 +29,7 @@ import java.util.UUID
 
 data class ConfigsUiState(
     val isGenerating: Boolean = false,
+    val isRootAvailable: Boolean = false,
     val showAddDialog: Boolean = false,
     val showWarpDialog: Boolean = false,
     val showImportDialog: Boolean = false,
@@ -68,8 +69,17 @@ class ConfigsViewModel(
     val uiState: StateFlow<ConfigsUiState> = _uiState.asStateFlow()
 
     init {
-        // Preload endpoints
         _uiState.value = _uiState.value.copy(discoveredEndpoints = EndpointCatalog.preconfiguredEndpoints)
+        checkRoot()
+    }
+
+    fun checkRoot() {
+        viewModelScope.launch(Dispatchers.IO) {
+            val root = RootRunner.isRootAvailable()
+            withContext(Dispatchers.Main) {
+                _uiState.value = _uiState.value.copy(isRootAvailable = root)
+            }
+        }
     }
 
     fun setSearchQuery(query: String) {
@@ -177,7 +187,8 @@ class ConfigsViewModel(
         viewModelScope.launch {
             val duplicated = config.copy(
                 id = UUID.randomUUID().toString(),
-                name = "${config.name} (Copy)"
+                name = "${config.name} (Copy)",
+                createdAt = System.currentTimeMillis()
             )
             configRepository.saveConfig(duplicated)
             _uiState.value = _uiState.value.copy(userMessage = "Profile duplicated!")
@@ -194,7 +205,7 @@ class ConfigsViewModel(
                 withContext(Dispatchers.Main) {
                     _uiState.value = _uiState.value.copy(
                         testingConfigId = null,
-                        userMessage = "✓ Endpoint '${config.endpoint}' alive! Real latency: ${result.latencyMs}ms"
+                        userMessage = "✓ Endpoint '${config.endpoint}' active! Ping: ${result.latencyMs}ms"
                     )
                 }
             } else {
@@ -202,6 +213,42 @@ class ConfigsViewModel(
                     _uiState.value = _uiState.value.copy(
                         testingConfigId = null,
                         userMessage = "✗ Endpoint '${config.endpoint}' unreachable: ${result.error ?: "Timeout"}"
+                    )
+                }
+            }
+        }
+    }
+
+    fun exportMagiskModule(context: Context, config: AwgConfig) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val res = MagiskModuleGenerator.generateModuleZip(context, config)
+            withContext(Dispatchers.Main) {
+                if (res.isSuccess) {
+                    val file = res.getOrThrow()
+                    MagiskModuleGenerator.shareModuleZip(context, file)
+                    _uiState.value = _uiState.value.copy(
+                        userMessage = "Magisk / KernelSU Module ZIP generated: ${file.name}"
+                    )
+                } else {
+                    _uiState.value = _uiState.value.copy(
+                        userMessage = "Module error: ${res.exceptionOrNull()?.localizedMessage}"
+                    )
+                }
+            }
+        }
+    }
+
+    fun applyRootTunnel(config: AwgConfig) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val res = App.instance.rootTunnelManager.connect(config)
+            withContext(Dispatchers.Main) {
+                if (res.isSuccess) {
+                    _uiState.value = _uiState.value.copy(
+                        userMessage = "🚀 Root Kernel Tunnel connected for ${config.name}!"
+                    )
+                } else {
+                    _uiState.value = _uiState.value.copy(
+                        userMessage = "Root Tunnel error: ${res.exceptionOrNull()?.localizedMessage}"
                     )
                 }
             }

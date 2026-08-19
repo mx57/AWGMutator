@@ -27,7 +27,7 @@ class GenerateWarpConfigUseCase(
             if (!endpoint.isNullOrBlank()) {
                 awgConfig = awgConfig.copy(endpoint = endpoint)
             }
-            awgConfig = awgConfig.copy(dns = dns, mtu = mtu)
+            awgConfig = awgConfig.copy(dns = dns, mtu = mtu, originType = "WARP", createdAt = System.currentTimeMillis())
 
             configRepository.saveConfig(awgConfig)
             awgConfig

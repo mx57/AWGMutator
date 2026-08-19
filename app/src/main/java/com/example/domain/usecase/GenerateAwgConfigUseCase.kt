@@ -130,7 +130,9 @@ class GenerateAwgConfigUseCase(
                 endpoint = endpoint,
                 persistentKeepalive = 25,
                 isWarp = isWarp,
-                reserved = reserved
+                reserved = reserved,
+                originType = "MANUAL",
+                createdAt = System.currentTimeMillis()
             )
 
             configRepository.saveConfig(config)

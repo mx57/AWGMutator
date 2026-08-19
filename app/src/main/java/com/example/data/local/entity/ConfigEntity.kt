@@ -35,6 +35,9 @@ data class ConfigEntity(
     val persistentKeepalive: Int,
     val isWarp: Boolean,
     val reserved: String?,
+    val originType: String = "MANUAL",
+    val evolutionGeneration: Int? = null,
+    val evolutionBatchId: String? = null,
     val createdAt: Long,
     val lastPingMs: Long?,
     val lastFitness: Double?
@@ -69,6 +72,9 @@ data class ConfigEntity(
         persistentKeepalive = persistentKeepalive,
         isWarp = isWarp,
         reserved = reserved,
+        originType = originType,
+        evolutionGeneration = evolutionGeneration,
+        evolutionBatchId = evolutionBatchId,
         createdAt = createdAt,
         lastPingMs = lastPingMs,
         lastFitness = lastFitness
@@ -105,6 +111,9 @@ data class ConfigEntity(
             persistentKeepalive = config.persistentKeepalive,
             isWarp = config.isWarp,
             reserved = config.reserved,
+            originType = config.originType,
+            evolutionGeneration = config.evolutionGeneration,
+            evolutionBatchId = config.evolutionBatchId,
             createdAt = config.createdAt,
             lastPingMs = config.lastPingMs,
             lastFitness = config.lastFitness

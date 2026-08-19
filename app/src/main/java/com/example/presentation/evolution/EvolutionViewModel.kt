@@ -5,11 +5,9 @@ import androidx.lifecycle.viewModelScope
 import com.example.App
 import com.example.domain.model.AwgConfig
 import com.example.domain.model.BlockedServicesCatalog
-import com.example.domain.model.DnsCatalog
 import com.example.domain.model.EvolutionSettings
 import com.example.domain.model.Genome
 import com.example.domain.model.ServiceCategory
-import com.example.domain.model.SniCatalog
 import com.example.domain.repository.ConfigRepository
 import com.example.evolution.EvolutionProgress
 import kotlinx.coroutines.Dispatchers
@@ -30,6 +28,7 @@ enum class EvolutionTargetProfile(val label: String) {
 
 data class EvolutionScreenState(
     val selectedBaseConfig: AwgConfig? = null,
+    val useAllConfigsAsSeeds: Boolean = true,
     val targetProfile: EvolutionTargetProfile = EvolutionTargetProfile.ALL_BLOCKED_PLATFORMS,
     val populationSize: Int = 8,
     val maxGenerations: Int = 10,
@@ -66,8 +65,12 @@ class EvolutionViewModel(
 
     private var evolutionJob: Job? = null
 
-    fun selectBaseConfig(config: AwgConfig) {
+    fun selectBaseConfig(config: AwgConfig?) {
         _screenState.value = _screenState.value.copy(selectedBaseConfig = config)
+    }
+
+    fun setUseAllConfigsAsSeeds(useAll: Boolean) {
+        _screenState.value = _screenState.value.copy(useAllConfigsAsSeeds = useAll)
     }
 
     fun selectTargetProfile(profile: EvolutionTargetProfile) {
@@ -125,10 +128,16 @@ class EvolutionViewModel(
     }
 
     fun startEvolution() {
-        val baseConfig = _screenState.value.selectedBaseConfig ?: configs.value.firstOrNull()
-        if (baseConfig == null) {
+        val allAvailable = configs.value
+        val seedConfigs = if (_screenState.value.useAllConfigsAsSeeds && allAvailable.isNotEmpty()) {
+            allAvailable
+        } else {
+            listOfNotNull(_screenState.value.selectedBaseConfig ?: allAvailable.firstOrNull())
+        }
+
+        if (seedConfigs.isEmpty()) {
             _screenState.value = _screenState.value.copy(
-                userMessage = "Please select or create a base configuration to evolve."
+                userMessage = "Please create at least one base configuration before running evolution."
             )
             return
         }
@@ -146,7 +155,7 @@ class EvolutionViewModel(
         evolutionJob?.cancel()
         evolutionJob = viewModelScope.launch(Dispatchers.Default) {
             App.instance.geneticAlgorithm.runEvolution(
-                baseConfig = baseConfig,
+                seedConfigs = seedConfigs,
                 populationSize = _screenState.value.populationSize,
                 maxGenerations = _screenState.value.maxGenerations,
                 targetUrls = targetUrls,
@@ -162,27 +171,33 @@ class EvolutionViewModel(
     }
 
     fun applyEvolvedConfig(genome: Genome) {
-        val base = _screenState.value.selectedBaseConfig ?: configs.value.firstOrNull() ?: return
+        val base = _screenState.value.selectedBaseConfig ?: configs.value.firstOrNull() ?: AwgConfig(
+            name = "Evolved AWG",
+            privateKey = "a".repeat(43) + "="
+        )
         val evolvedConfig = genome.applyToConfig(base)
         viewModelScope.launch(Dispatchers.IO) {
             configRepository.saveConfig(evolvedConfig)
             withContext(Dispatchers.Main) {
                 App.instance.tunnelManager.connect(evolvedConfig)
                 _screenState.value = _screenState.value.copy(
-                    userMessage = "Evolved config applied and connected!"
+                    userMessage = "🧬 Evolved Gen ${evolvedConfig.evolutionGeneration} applied & connected!"
                 )
             }
         }
     }
 
     fun saveEvolvedConfig(genome: Genome) {
-        val base = _screenState.value.selectedBaseConfig ?: configs.value.firstOrNull() ?: return
+        val base = _screenState.value.selectedBaseConfig ?: configs.value.firstOrNull() ?: AwgConfig(
+            name = "Evolved AWG",
+            privateKey = "a".repeat(43) + "="
+        )
         val evolvedConfig = genome.applyToConfig(base)
         viewModelScope.launch(Dispatchers.IO) {
             configRepository.saveConfig(evolvedConfig)
             withContext(Dispatchers.Main) {
                 _screenState.value = _screenState.value.copy(
-                    userMessage = "Evolved config saved to list!"
+                    userMessage = "Saved ${evolvedConfig.name} to configs list!"
                 )
             }
         }

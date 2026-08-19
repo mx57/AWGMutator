@@ -46,6 +46,9 @@ class App : Application() {
     lateinit var tunnelManager: TunnelManager
         private set
 
+    lateinit var rootTunnelManager: com.example.vpn.RootTunnelManager
+        private set
+
     lateinit var splitTunnelManager: SplitTunnelManager
         private set
 
@@ -73,6 +76,7 @@ class App : Application() {
         dpiNoiseManager = DpiNoiseManager()
         splitTunnelManager = SplitTunnelManager(applicationContext)
         tunnelManager = TunnelManager(applicationContext)
+        rootTunnelManager = com.example.vpn.RootTunnelManager(applicationContext)
         geneticAlgorithm = GeneticAlgorithm(
             pingTester = pingTester,
             evolutionRepository = evolutionRepository
