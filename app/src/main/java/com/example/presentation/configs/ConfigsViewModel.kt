@@ -75,9 +75,9 @@ class ConfigsViewModel(
 
     fun checkRoot() {
         viewModelScope.launch(Dispatchers.IO) {
-            val root = RootRunner.isRootAvailable()
+            val rootReady = App.instance.rootTunnelManager.isRootReady()
             withContext(Dispatchers.Main) {
-                _uiState.value = _uiState.value.copy(isRootAvailable = root)
+                _uiState.value = _uiState.value.copy(isRootAvailable = rootReady)
             }
         }
     }

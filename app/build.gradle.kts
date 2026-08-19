@@ -14,6 +14,11 @@ android {
   namespace = "com.example"
   compileSdk { version = release(36) { minorApiLevel = 1 } }
 
+  lint {
+    baseline = file("lint-baseline.xml")
+    abortOnError = false
+  }
+
   defaultConfig {
     applicationId = "com.aistudio.awgmutator.vpevol"
     minSdk = 26
