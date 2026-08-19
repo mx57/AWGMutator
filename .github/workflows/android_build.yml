@@ -53,15 +53,17 @@ jobs:
             fi
           fi
 
-          # 3. Decode and create debug.keystore in project root
+          # 3. Decode or generate debug.keystore in project root
           if [ -f "debug.keystore.base64" ]; then
             echo "Decoding debug.keystore from base64..."
             base64 -d debug.keystore.base64 > debug.keystore
-            echo "✓ Debug keystore created at $(pwd)/debug.keystore"
-            ls -lh debug.keystore
-          else
-            echo "ℹ debug.keystore.base64 not found - will use Android default debug keystore"
+            echo "✓ Debug keystore decoded at $(pwd)/debug.keystore"
+          elif [ ! -f "debug.keystore" ]; then
+            echo "Generating debug.keystore via keytool..."
+            keytool -genkey -v -keystore debug.keystore -storepass android -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 -dname "CN=Android Debug,O=Android,C=US"
+            echo "✓ Debug keystore generated at $(pwd)/debug.keystore"
           fi
+          ls -lh debug.keystore || true
 
           chmod +x gradlew || true
 

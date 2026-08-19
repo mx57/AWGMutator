@@ -38,10 +38,13 @@ android {
       }
       if (debugKs.exists()) {
         storeFile = debugKs
-        storePassword = "android"
-        keyAlias = "androiddebugkey"
-        keyPassword = "android"
+      } else {
+        val defaultDebugKeystore = file("${System.getProperty("user.home")}/.android/debug.keystore")
+        storeFile = defaultDebugKeystore
       }
+      storePassword = "android"
+      keyAlias = "androiddebugkey"
+      keyPassword = "android"
     }
     create("release") {
       val customPath = System.getenv("KEYSTORE_PATH")
@@ -52,7 +55,6 @@ android {
         keyAlias = System.getenv("KEY_ALIAS") ?: "upload"
         keyPassword = System.getenv("KEY_PASSWORD") ?: "android"
       } else {
-        // Fallback to debug.keystore
         val debugKs = file("${rootDir}/debug.keystore")
         if (!debugKs.exists()) {
           val base64File = file("${rootDir}/debug.keystore.base64")
@@ -65,10 +67,12 @@ android {
         }
         if (debugKs.exists()) {
           storeFile = debugKs
-          storePassword = "android"
-          keyAlias = "androiddebugkey"
-          keyPassword = "android"
+        } else {
+          storeFile = file("${System.getProperty("user.home")}/.android/debug.keystore")
         }
+        storePassword = "android"
+        keyAlias = "androiddebugkey"
+        keyPassword = "android"
       }
     }
   }
