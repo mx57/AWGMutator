@@ -25,19 +25,19 @@ class GenerateHybridWarpAwgUseCase(
             val warpConfig = warpResult.getOrThrow()
             val baseAwg = warpConfig.toAwgConfig(customName)
 
-            val jmin = 64 + random.nextInt(128)
-            val jmax = jmin + random.nextInt(256)
-            val jc = 3 + random.nextInt(4)
+            val jmin = 40 + random.nextInt(20) // [40, 60]
+            val jmax = jmin + random.nextInt(80) // [40, 140]
+            val jc = 1 + random.nextInt(8) // [1, 8]
 
-            val s1 = 10 + random.nextInt(20)
-            val s2 = 15 + random.nextInt(20)
-            val s3 = 10 + random.nextInt(15)
-            val s4 = 5 + random.nextInt(10)
+            val s1 = 5 + random.nextInt(25) // [5, 30]
+            val s2 = 5 + random.nextInt(25) // [5, 30]
+            val s3 = 0 + random.nextInt(15)
+            val s4 = 0 + random.nextInt(10)
 
-            val h1 = (random.nextLong() and 0x7FFFFFFF) + 1100000L
-            val h2 = (random.nextLong() and 0x7FFFFFFF) + 2200000L
-            val h3 = (random.nextLong() and 0x7FFFFFFF) + 3300000L
-            val h4 = (random.nextLong() and 0x7FFFFFFF) + 4400000L
+            val h1 = 1L + random.nextInt(100)
+            val h2 = 1L + random.nextInt(100)
+            val h3 = 1L + random.nextInt(100)
+            val h4 = 1L + random.nextInt(100)
 
             val hybrid = baseAwg.copy(
                 dns = dns,

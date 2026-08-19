@@ -58,7 +58,15 @@ data class AwgConfig(
         val builder = StringBuilder()
         builder.appendLine("[Interface]")
         builder.appendLine("PrivateKey = $privateKey")
-        val cleanAddr = if (address.endsWith("/32")) address.removeSuffix("/32") else address
+        // Clean address string to avoid duplicate CIDR suffixes like /32/32 or /128/128
+        val cleanAddr = address.split(",")
+            .map { it.trim() }
+            .map { addr ->
+                var a = addr
+                while (a.endsWith("/32/32")) a = a.replace("/32/32", "/32")
+                while (a.endsWith("/128/128")) a = a.replace("/128/128", "/128")
+                a
+            }.joinToString(", ")
         builder.appendLine("Address = $cleanAddr")
         builder.appendLine("DNS = $dns")
         builder.appendLine("MTU = $mtu")

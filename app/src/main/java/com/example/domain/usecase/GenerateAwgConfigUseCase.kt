@@ -86,14 +86,14 @@ class GenerateAwgConfigUseCase(
                 }
             }
 
-            val jmin = customJmin ?: pjmin
-            val jmax = customJmax ?: pjmax.coerceAtLeast(jmin + 10)
-            val jc = customJc ?: pjc
+            val jmin = (customJmin ?: pjmin).coerceIn(40, 60)
+            val jmax = (customJmax ?: pjmax).coerceIn(jmin, 1400)
+            val jc = (customJc ?: pjc).coerceIn(1, 128)
 
-            val s1 = customS1 ?: ps1
-            val s2 = customS2 ?: ps2
-            val s3 = customS3 ?: ps3
-            val s4 = customS4 ?: ps4
+            val s1 = (customS1 ?: ps1).coerceIn(0, 50)
+            val s2 = (customS2 ?: ps2).coerceIn(0, 50)
+            val s3 = (customS3 ?: ps3).coerceIn(0, 50)
+            val s4 = (customS4 ?: ps4).coerceIn(0, 50)
 
             val h1 = customH1 ?: ph1
             val h2 = customH2 ?: ph2

@@ -32,10 +32,20 @@ class RootTunnelManager(private val context: Context) {
     private val tableId = "51820"
     private val fwMark = "0x51820"
 
+    var isRootModeEnabled: Boolean
+        get() = context.getSharedPreferences("awg_root_prefs", Context.MODE_PRIVATE)
+            .getBoolean("root_mode_enabled", false)
+        set(value) {
+            context.getSharedPreferences("awg_root_prefs", Context.MODE_PRIVATE)
+                .edit()
+                .putBoolean("root_mode_enabled", value)
+                .apply()
+        }
+
     /**
-     * Checks whether root mode is enabled and accessible.
+     * Checks whether root mode is enabled in settings and accessible.
      */
-    suspend fun isRootReady(): Boolean = RootRunner.isRootAvailable()
+    suspend fun isRootReady(): Boolean = isRootModeEnabled && RootRunner.isRootAvailable()
 
     /**
      * Connects and starts the tunnel via Root commands.
@@ -78,10 +88,17 @@ class RootTunnelManager(private val context: Context) {
         commands.add("ip rule add table main suppress_prefixlength 0 priority 990 || true")
         commands.add("ip route add default dev $ifaceName table $tableId || true")
 
-        // 5. iptables MSS clamping and DNS redirect
-        commands.add("iptables -t mangle -A POSTROUTING -p tcp --tcp-flags SYN,RST SYN -o $ifaceName -j TCPMSS --clamp-mss-to-pmtu || true")
-        commands.add("iptables -t nat -A OUTPUT -p udp --dport 53 -j DNAT --to-destination $primaryDns:53 || true")
-        commands.add("iptables -t nat -A OUTPUT -p tcp --dport 53 -j DNAT --to-destination $primaryDns:53 || true")
+        // 5. iptables MSS clamping and DNS redirect via isolated chains
+        commands.add("iptables -t nat -N AWG_OUTPUT || true")
+        commands.add("iptables -t nat -F AWG_OUTPUT || true")
+        commands.add("iptables -t nat -C OUTPUT -j AWG_OUTPUT 2>/dev/null || iptables -t nat -I OUTPUT -j AWG_OUTPUT || true")
+        commands.add("iptables -t nat -A AWG_OUTPUT -p udp --dport 53 -j DNAT --to-destination $primaryDns:53 || true")
+        commands.add("iptables -t nat -A AWG_OUTPUT -p tcp --dport 53 -j DNAT --to-destination $primaryDns:53 || true")
+
+        commands.add("iptables -t mangle -N AWG_POSTROUTING || true")
+        commands.add("iptables -t mangle -F AWG_POSTROUTING || true")
+        commands.add("iptables -t mangle -C POSTROUTING -j AWG_POSTROUTING 2>/dev/null || iptables -t mangle -I POSTROUTING -j AWG_POSTROUTING || true")
+        commands.add("iptables -t mangle -A AWG_POSTROUTING -p tcp --tcp-flags SYN,RST SYN -o $ifaceName -j TCPMSS --clamp-mss-to-pmtu || true")
 
         val res = RootRunner.execute(*commands.toTypedArray())
 
@@ -122,11 +139,20 @@ class RootTunnelManager(private val context: Context) {
 
     private suspend fun teardownInterface() {
         RootRunner.execute(
+            // 1. Remove isolated iptables rules without flushing system tables
+            "iptables -t nat -D OUTPUT -j AWG_OUTPUT || true",
+            "iptables -t nat -F AWG_OUTPUT || true",
+            "iptables -t nat -X AWG_OUTPUT || true",
+            "iptables -t mangle -D POSTROUTING -j AWG_POSTROUTING || true",
+            "iptables -t mangle -F AWG_POSTROUTING || true",
+            "iptables -t mangle -X AWG_POSTROUTING || true",
+            // 2. Clean policy routing
+            "ip route flush table $tableId || true",
+            "ip rule del not fwmark $fwMark table $tableId priority 1000 || true",
+            "ip rule del table main suppress_prefixlength 0 priority 990 || true",
+            // 3. Remove interface
             "ip link set down dev $ifaceName || true",
-            "ip link delete dev $ifaceName || true",
-            "ip rule del table $tableId || true",
-            "iptables -t nat -F OUTPUT || true",
-            "iptables -t mangle -F POSTROUTING || true"
+            "ip link delete dev $ifaceName || true"
         )
     }
 
