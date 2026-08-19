@@ -28,12 +28,26 @@ jobs:
         with:
           gradle-version: 8.11.1
 
-      - name: Ensure Executable Gradle Wrapper
+      - name: Setup Environment Files, Keystores & Wrapper
         run: |
-          if [ ! -f "gradlew" ] || [ ! -f "gradle/wrapper/gradle-wrapper.jar" ]; then
-            gradle wrapper --gradle-version 8.11.1
+          mkdir -p gradle/wrapper
+          if [ ! -f "gradle/wrapper/gradle-wrapper.jar" ]; then
+            curl -sLo gradle/wrapper/gradle-wrapper.jar https://raw.githubusercontent.com/gradle/gradle/v8.11.1/gradle/wrapper/gradle-wrapper.jar || true
           fi
-          chmod +x gradlew
+
+          if [ ! -f ".env" ]; then
+            if [ -f ".env.example" ]; then
+              cp .env.example .env
+            else
+              touch .env
+            fi
+          fi
+
+          if [ -f "debug.keystore.base64" ]; then
+            base64 -d debug.keystore.base64 > debug.keystore || true
+          fi
+
+          chmod +x gradlew || true
 
       - name: Build Debug APK
         run: ./gradlew assembleDebug --stacktrace

@@ -1,5 +1,6 @@
 package com.example
 
+import android.content.ComponentCallbacks2
 import android.content.Intent
 import android.net.VpnService
 import android.os.Bundle
@@ -34,5 +35,11 @@ class MainActivity : ComponentActivity() {
             }
         }
     }
-}
 
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_MODERATE) {
+            System.gc()
+        }
+    }
+}

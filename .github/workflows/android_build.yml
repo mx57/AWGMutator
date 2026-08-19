@@ -35,9 +35,16 @@ jobs:
           gradle-version: 8.11.1
           cache-read-only: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/master' }}
 
-      - name: Setup Environment Files & Keystores
+      - name: Setup Environment Files, Keystores & Wrapper
         run: |
-          # 1. Ensure .env exists for Secrets Gradle plugin
+          # 1. Download gradle-wrapper.jar if not present
+          mkdir -p gradle/wrapper
+          if [ ! -f "gradle/wrapper/gradle-wrapper.jar" ]; then
+            echo "Fetching gradle-wrapper.jar..."
+            curl -sLo gradle/wrapper/gradle-wrapper.jar https://raw.githubusercontent.com/gradle/gradle/v8.11.1/gradle/wrapper/gradle-wrapper.jar || true
+          fi
+
+          # 2. Ensure .env exists for Secrets Gradle plugin
           if [ ! -f ".env" ]; then
             if [ -f ".env.example" ]; then
               cp .env.example .env
@@ -46,22 +53,17 @@ jobs:
             fi
           fi
 
-          # 2. Decode debug.keystore
+          # 3. Decode debug.keystore
           if [ -f "debug.keystore.base64" ]; then
             echo "Decoding debug.keystore from base64..."
             base64 -d debug.keystore.base64 > debug.keystore || true
           fi
 
-          # 3. Ensure Gradle wrapper exists and is executable
-          if [ ! -f "gradlew" ] || [ ! -f "gradle/wrapper/gradle-wrapper.jar" ]; then
-            echo "Generating Gradle wrapper..."
-            gradle wrapper --gradle-version 8.11.1 || true
-          fi
           chmod +x gradlew || true
 
       - name: Run Unit Tests
         run: |
-          ./gradlew testDebugUnitTest --stacktrace --continue || echo "Tests finished"
+          ./gradlew testDebugUnitTest --stacktrace --continue || echo "Unit tests finished"
 
       - name: Build Debug APK
         run: ./gradlew assembleDebug --stacktrace

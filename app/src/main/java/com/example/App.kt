@@ -3,6 +3,7 @@ package com.example
 import android.app.Application
 import android.app.NotificationChannel
 import android.app.NotificationManager
+import android.content.ComponentCallbacks2
 import android.os.Build
 import androidx.room.Room
 import com.example.data.local.AppDatabase
@@ -20,6 +21,7 @@ import com.example.vpn.TunnelManager
 /**
  * Main Application class for AWGMutator.
  * Initializes notification channels, Room DB, repositories, noise manager, and core services.
+ * Implements memory trimming callbacks to adhere to Android Q+ ashmem guidelines.
  */
 class App : Application() {
 
@@ -60,7 +62,8 @@ class App : Application() {
             applicationContext,
             AppDatabase::class.java,
             "awg_mutator.db"
-        ).fallbackToDestructiveMigration(true).build()
+        ).setJournalMode(androidx.room.RoomDatabase.JournalMode.WRITE_AHEAD_LOGGING)
+         .fallbackToDestructiveMigration(true).build()
 
         configRepository = ConfigRepositoryImpl(database.configDao())
         evolutionRepository = EvolutionRepositoryImpl(database.evolutionDao())
@@ -74,6 +77,18 @@ class App : Application() {
             pingTester = pingTester,
             evolutionRepository = evolutionRepository
         )
+    }
+
+    override fun onTrimMemory(level: Int) {
+        super.onTrimMemory(level)
+        if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) {
+            System.gc()
+        }
+    }
+
+    override fun onLowMemory() {
+        super.onLowMemory()
+        System.gc()
     }
 
     private fun createNotificationChannels() {
