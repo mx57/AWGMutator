@@ -2,10 +2,13 @@ package com.example.vpn
 
 import android.app.Notification
 import android.app.PendingIntent
+import android.content.Context
 import android.content.Intent
 import android.net.VpnService
+import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.ParcelFileDescriptor
+import android.os.PowerManager
 import androidx.core.app.NotificationCompat
 import com.example.App
 import com.example.MainActivity
@@ -32,6 +35,8 @@ class AwgVpnService : VpnService() {
     private var vpnInterface: ParcelFileDescriptor? = null
     private val serviceScope = CoroutineScope(Dispatchers.IO + Job())
     private var packetRouter: TunPacketRouter? = null
+    private var wakeLock: PowerManager.WakeLock? = null
+    private var wifiLock: WifiManager.WifiLock? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -63,10 +68,37 @@ class AwgVpnService : VpnService() {
             }
         }
 
-        return START_NOT_STICKY
+        return START_STICKY
+    }
+
+    private fun acquireWakeLocks() {
+        if (wakeLock == null) {
+            val pm = getSystemService(Context.POWER_SERVICE) as? PowerManager
+            wakeLock = pm?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "AWGMutator:VpnWakeLock")?.apply {
+                acquire(10 * 60 * 1000L /* 10 hours max safety timeout */)
+            }
+        }
+        if (wifiLock == null) {
+            val wm = applicationContext.getSystemService(Context.WIFI_SERVICE) as? WifiManager
+            wifiLock = wm?.createWifiLock(WifiManager.WIFI_MODE_FULL_HIGH_PERF, "AWGMutator:VpnWifiLock")?.apply {
+                acquire()
+            }
+        }
+    }
+
+    private fun releaseWakeLocks() {
+        runCatching {
+            if (wakeLock?.isHeld == true) wakeLock?.release()
+            wakeLock = null
+        }
+        runCatching {
+            if (wifiLock?.isHeld == true) wifiLock?.release()
+            wifiLock = null
+        }
     }
 
     private fun startTunnel(rawConfig: AwgConfig) {
+        acquireWakeLocks()
         // Apply DpiNoiseManager runtime handshake modulation and noise injection
         val config = App.instance.dpiNoiseManager.applyRuntimeNoiseModulation(rawConfig)
 
@@ -206,6 +238,8 @@ class AwgVpnService : VpnService() {
             vpnInterface?.close()
             vpnInterface = null
         } catch (_: Exception) {}
+
+        releaseWakeLocks()
 
         App.instance.tunnelManager.updateStatus(
             VpnStatus(
