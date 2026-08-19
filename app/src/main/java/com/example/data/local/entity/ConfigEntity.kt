@@ -1,0 +1,98 @@
+package com.example.data.local.entity
+
+import androidx.room.Entity
+import androidx.room.PrimaryKey
+import com.example.domain.model.AwgConfig
+
+@Entity(tableName = "vpn_configs")
+data class ConfigEntity(
+    @PrimaryKey val id: String,
+    val name: String,
+    val privateKey: String,
+    val address: String,
+    val dns: String,
+    val mtu: Int,
+    val jc: Int,
+    val jmin: Int,
+    val jmax: Int,
+    val s1: Int,
+    val s2: Int,
+    val s3: Int,
+    val s4: Int,
+    val h1: Long,
+    val h2: Long,
+    val h3: Long,
+    val h4: Long,
+    val peerPublicKey: String,
+    val presharedKey: String?,
+    val allowedIps: String,
+    val endpoint: String,
+    val persistentKeepalive: Int,
+    val isWarp: Boolean,
+    val reserved: String?,
+    val createdAt: Long,
+    val lastPingMs: Long?,
+    val lastFitness: Double?
+) {
+    fun toDomain(): AwgConfig = AwgConfig(
+        id = id,
+        name = name,
+        privateKey = privateKey,
+        address = address,
+        dns = dns,
+        mtu = mtu,
+        jc = jc,
+        jmin = jmin,
+        jmax = jmax,
+        s1 = s1,
+        s2 = s2,
+        s3 = s3,
+        s4 = s4,
+        h1 = h1,
+        h2 = h2,
+        h3 = h3,
+        h4 = h4,
+        peerPublicKey = peerPublicKey,
+        presharedKey = presharedKey,
+        allowedIps = allowedIps,
+        endpoint = endpoint,
+        persistentKeepalive = persistentKeepalive,
+        isWarp = isWarp,
+        reserved = reserved,
+        createdAt = createdAt,
+        lastPingMs = lastPingMs,
+        lastFitness = lastFitness
+    )
+
+    companion object {
+        fun fromDomain(config: AwgConfig): ConfigEntity = ConfigEntity(
+            id = config.id,
+            name = config.name,
+            privateKey = config.privateKey,
+            address = config.address,
+            dns = config.dns,
+            mtu = config.mtu,
+            jc = config.jc,
+            jmin = config.jmin,
+            jmax = config.jmax,
+            s1 = config.s1,
+            s2 = config.s2,
+            s3 = config.s3,
+            s4 = config.s4,
+            h1 = config.h1,
+            h2 = config.h2,
+            h3 = config.h3,
+            h4 = config.h4,
+            peerPublicKey = config.peerPublicKey,
+            presharedKey = config.presharedKey,
+            allowedIps = config.allowedIps,
+            endpoint = config.endpoint,
+            persistentKeepalive = config.persistentKeepalive,
+            isWarp = config.isWarp,
+            reserved = config.reserved,
+            createdAt = config.createdAt,
+            lastPingMs = config.lastPingMs,
+            lastFitness = config.lastFitness
+        )
+    }
+}

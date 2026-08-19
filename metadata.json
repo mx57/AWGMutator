@@ -1,0 +1,6 @@
+{
+  "name": "AWGMutator",
+  "description": "Android-приложение для генерации, эволюции и подключения VPN-конфигураций AmneziaWG и Cloudflare WARP с генетической оптимизацией обфускации и split tunneling.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
