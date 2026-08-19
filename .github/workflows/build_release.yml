@@ -49,13 +49,28 @@ jobs:
           fi
 
           if [ -f "debug.keystore.base64" ]; then
-            base64 -d debug.keystore.base64 > debug.keystore || true
+            echo "Decoding debug.keystore from base64..."
+            base64 -d debug.keystore.base64 > debug.keystore
+            echo "✓ Debug keystore created at $(pwd)/debug.keystore"
           fi
 
           chmod +x gradlew || true
 
       - name: Build Debug & Release APK
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
         run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "Decoding release keystore..."
+            echo "$KEYSTORE_BASE64" | base64 --decode > release.keystore
+            export KEYSTORE_PATH="$(pwd)/release.keystore"
+            export STORE_PASSWORD="$KEYSTORE_PASSWORD"
+            export KEY_PASSWORD="$KEY_PASSWORD"
+            export KEY_ALIAS="$KEY_ALIAS"
+          fi
           ./gradlew assembleDebug --stacktrace
           ./gradlew assembleRelease --stacktrace || true
 

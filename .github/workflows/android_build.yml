@@ -53,10 +53,14 @@ jobs:
             fi
           fi
 
-          # 3. Decode debug.keystore
+          # 3. Decode and create debug.keystore in project root
           if [ -f "debug.keystore.base64" ]; then
             echo "Decoding debug.keystore from base64..."
-            base64 -d debug.keystore.base64 > debug.keystore || true
+            base64 -d debug.keystore.base64 > debug.keystore
+            echo "✓ Debug keystore created at $(pwd)/debug.keystore"
+            ls -lh debug.keystore
+          else
+            echo "ℹ debug.keystore.base64 not found - will use Android default debug keystore"
           fi
 
           chmod +x gradlew || true
@@ -78,8 +82,8 @@ jobs:
         run: |
           if [ -n "$KEYSTORE_BASE64" ]; then
             echo "Secrets detected: Decoding release keystore..."
-            echo "$KEYSTORE_BASE64" | base64 --decode > app/release.keystore
-            export KEYSTORE_PATH="$(pwd)/app/release.keystore"
+            echo "$KEYSTORE_BASE64" | base64 --decode > release.keystore
+            export KEYSTORE_PATH="$(pwd)/release.keystore"
             export STORE_PASSWORD="$KEYSTORE_PASSWORD"
             export KEY_PASSWORD="$KEY_PASSWORD"
             export KEY_ALIAS="$KEY_ALIAS"
