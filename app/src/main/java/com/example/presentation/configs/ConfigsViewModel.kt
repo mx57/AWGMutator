@@ -30,6 +30,7 @@ data class ConfigsUiState(
     val searchQuery: String = "",
     val activeQrConfig: AwgConfig? = null,
     val activeExportConfig: AwgConfig? = null,
+    val testingConfigId: String? = null,
     val userMessage: String? = null
 )
 
@@ -94,6 +95,30 @@ class ConfigsViewModel(
         }
     }
 
+    fun testConfigEndpoint(config: AwgConfig) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _uiState.value = _uiState.value.copy(testingConfigId = config.id)
+            val result = App.instance.pingTester.testEndpoint(config.endpoint)
+            if (result.isReachable && result.latencyMs != null) {
+                val updated = config.copy(lastPingMs = result.latencyMs)
+                configRepository.saveConfig(updated)
+                withContext(Dispatchers.Main) {
+                    _uiState.value = _uiState.value.copy(
+                        testingConfigId = null,
+                        userMessage = "✓ Endpoint '${config.endpoint}' alive! Real latency: ${result.latencyMs}ms"
+                    )
+                }
+            } else {
+                withContext(Dispatchers.Main) {
+                    _uiState.value = _uiState.value.copy(
+                        testingConfigId = null,
+                        userMessage = "✗ Endpoint '${config.endpoint}' unreachable: ${result.error ?: "Timeout"}"
+                    )
+                }
+            }
+        }
+    }
+
     fun shareConfigFile(context: Context, config: AwgConfig) {
         val confText = config.toConfString()
         val shareIntent = Intent(Intent.ACTION_SEND).apply {
@@ -108,6 +133,7 @@ class ConfigsViewModel(
         name: String,
         endpoint: String,
         peerKey: String,
+        dns: String,
         preset: ObfuscationPreset?,
         jc: Int,
         jmin: Int,
@@ -128,6 +154,7 @@ class ConfigsViewModel(
                 name = name.ifBlank { "Custom AWG" },
                 endpoint = endpoint.ifBlank { "192.168.1.1:51820" },
                 peerPublicKey = peerKey,
+                dns = dns.ifBlank { "1.1.1.1, 1.0.0.1" },
                 preset = preset,
                 customJc = jc,
                 customJmin = jmin,
@@ -180,7 +207,7 @@ class ConfigsViewModel(
                 _uiState.value = _uiState.value.copy(
                     isGenerating = false,
                     showWarpDialog = false,
-                    userMessage = if (result.isSuccess) "WARP profile registered!" else "Note: ${result.exceptionOrNull()?.localizedMessage}"
+                    userMessage = if (result.isSuccess) "WARP profile registered with mirror auto-failover!" else "Note: ${result.exceptionOrNull()?.localizedMessage}"
                 )
             }
         }

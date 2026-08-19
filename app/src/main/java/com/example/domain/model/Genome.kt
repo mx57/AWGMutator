@@ -3,7 +3,8 @@ package com.example.domain.model
 import java.util.UUID
 
 /**
- * Represents an individual genetic profile encoding AmneziaWG obfuscation parameters.
+ * Represents an individual genetic profile encoding AmneziaWG obfuscation parameters
+ * and censorship-resistant DNS resolver configuration.
  */
 data class Genome(
     val id: String = UUID.randomUUID().toString(),
@@ -19,13 +20,14 @@ data class Genome(
     val h3: Long,         // 0..4_294_967_295, != h1, != h2
     val h4: Long,         // 0..4_294_967_295, != h1, != h2, != h3
     val mtu: Int = 1360,  // 1280..1420
+    val dns: String = "1.1.1.1, 1.0.0.1",
     var fitness: Double = 0.0,
     var avgPingMs: Long = 0L,
     var successRate: Double = 0.0,
     var generation: Int = 0
 ) {
     /**
-     * Applies this genome's obfuscation parameters onto a base configuration template.
+     * Applies this genome's obfuscation parameters and evolved DNS onto a base configuration template.
      */
     fun applyToConfig(base: AwgConfig): AwgConfig {
         return base.copy(
@@ -43,6 +45,7 @@ data class Genome(
             h3 = h3,
             h4 = h4,
             mtu = mtu,
+            dns = dns.ifBlank { base.dns },
             lastPingMs = avgPingMs,
             lastFitness = fitness
         )
@@ -62,6 +65,7 @@ data class Genome(
         val validS3 = s3.coerceIn(0, 64)
         val validS4 = s4.coerceIn(0, 32)
         val validMtu = mtu.coerceIn(1280, 1420)
+        val validDns = dns.ifBlank { "1.1.1.1, 1.0.0.1" }
 
         var newH1 = h1.coerceIn(1L, 4294967295L)
         var newH2 = h2.coerceIn(1L, 4294967295L)
@@ -89,7 +93,8 @@ data class Genome(
             h2 = newH2,
             h3 = newH3,
             h4 = newH4,
-            mtu = validMtu
+            mtu = validMtu,
+            dns = validDns
         )
     }
 }

@@ -1,16 +1,23 @@
 package com.example.data.remote
 
 import android.util.Base64
+import com.example.domain.model.DnsCatalog
 import com.example.domain.model.WarpConfig
 import com.example.util.WireGuardKeyGen
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
+import java.net.InetSocketAddress
+import java.net.Socket
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -19,39 +26,97 @@ import java.util.TimeZone
 import java.util.concurrent.TimeUnit
 
 /**
- * Robust Client for interacting with Cloudflare WARP client API with failover endpoints,
- * WARP+ license attachment support, and automatic offline fallback profile generation.
+ * Data class representing a Cloudflare API Mirror endpoint with optional Host header override.
+ */
+data class CloudflareMirror(
+    val url: String,
+    val hostHeader: String? = null,
+    val name: String
+)
+
+/**
+ * Robust Client for interacting with Cloudflare WARP client API with dynamic mirror speed probing,
+ * auto-failover across 12+ CDN and direct IP endpoints, and DNS server integration.
  */
 class CloudflareApi(
     private val client: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(10, TimeUnit.SECONDS)
-        .readTimeout(10, TimeUnit.SECONDS)
-        .writeTimeout(10, TimeUnit.SECONDS)
+        .connectTimeout(6, TimeUnit.SECONDS)
+        .readTimeout(6, TimeUnit.SECONDS)
+        .writeTimeout(6, TimeUnit.SECONDS)
         .retryOnConnectionFailure(true)
         .build()
 ) {
-    private val apiEndpoints = listOf(
-        "https://api.cloudflareclient.com/v0a2158",
-        "https://api.cloudflareclient.com/v0a3900",
-        "https://api.cloudflareclient.com/v0a1922",
-        "https://api.cloudflareclient.com/v0a884"
+    val mirrors: List<CloudflareMirror> = listOf(
+        CloudflareMirror("https://api.cloudflareclient.com/v0a3900", null, "Official API v0a3900"),
+        CloudflareMirror("https://api.cloudflareclient.com/v0a2158", null, "Official API v0a2158"),
+        CloudflareMirror("https://api.cloudflareclient.com/v0a1922", null, "Official API v0a1922"),
+        CloudflareMirror("https://api.cloudflareclient.com/v0a884", null, "Official API v0a884"),
+        CloudflareMirror("https://engage.cloudflareclient.com/v0a2158", "api.cloudflareclient.com", "Engage Anycast Mirror"),
+        CloudflareMirror("https://162.159.192.1/v0a2158", "api.cloudflareclient.com", "Direct IP 162.159.192.1"),
+        CloudflareMirror("https://162.159.193.1/v0a2158", "api.cloudflareclient.com", "Direct IP 162.159.193.1"),
+        CloudflareMirror("https://162.159.195.1/v0a2158", "api.cloudflareclient.com", "Direct IP 162.159.195.1"),
+        CloudflareMirror("https://188.114.96.1/v0a2158", "api.cloudflareclient.com", "Direct IP 188.114.96.1"),
+        CloudflareMirror("https://188.114.97.1/v0a2158", "api.cloudflareclient.com", "Direct IP 188.114.97.1"),
+        CloudflareMirror("https://cloudflare-warp.isegaro.workers.dev/v0a2158", null, "Cloudflare Workers Proxy 1"),
+        CloudflareMirror("https://warp-api.ext.workers.dev/v0a2158", null, "Cloudflare Workers Proxy 2")
     )
 
     private val jsonMediaType = "application/json; charset=UTF-8".toMediaType()
 
     /**
-     * Registers a new Cloudflare WARP account, enables WARP, optionally binds a license key,
-     * and returns the full [WarpConfig]. Guaranteed to run on [Dispatchers.IO].
+     * Probes available Cloudflare API mirrors concurrently and returns them sorted by fastest response time.
+     */
+    suspend fun getAvailableMirrorsSorted(): List<CloudflareMirror> = withContext(Dispatchers.IO) {
+        coroutineScope {
+            val probeResults = mirrors.map { mirror ->
+                async {
+                    val ping = probeMirror(mirror)
+                    Pair(mirror, ping)
+                }
+            }.awaitAll()
+
+            // Filter responsive mirrors or fallback to full list
+            val sorted = probeResults.sortedBy { it.second ?: 99999L }.map { it.first }
+            if (sorted.isNotEmpty()) sorted else mirrors
+        }
+    }
+
+    private fun probeMirror(mirror: CloudflareMirror): Long? {
+        val start = System.nanoTime()
+        return try {
+            val reqBuilder = Request.Builder()
+                .url("${mirror.url}/reg")
+                .head()
+                .header("User-Agent", "okhttp/3.12.1")
+                .header("CF-Client-Version", "a-6.30-3900")
+
+            if (mirror.hostHeader != null) {
+                reqBuilder.header("Host", mirror.hostHeader)
+            }
+
+            client.newCall(reqBuilder.build()).execute().use { response ->
+                val elapsed = (System.nanoTime() - start) / 1_000_000
+                // MethodNotAllowed 405 or 400 on HEAD /reg proves server is alive and reachable!
+                if (response.code in 200..499) elapsed else null
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    /**
+     * Registers a new Cloudflare WARP account by automatically attempting available mirrors with failover,
+     * binds license if provided, and configures optimal DNS servers.
      */
     suspend fun generateWarpConfig(
         licenseKey: String? = null,
-        maxRetries: Int = 3
+        dnsOverride: String? = null
     ): Result<WarpConfig> = withContext(Dispatchers.IO) {
+        val sortedMirrors = getAvailableMirrorsSorted()
         var lastError: Exception? = null
 
-        // Try live Cloudflare API endpoints
-        for (baseUrl in apiEndpoints) {
-            for (attempt in 1..maxRetries) {
+        for (mirror in sortedMirrors) {
+            for (attempt in 1..2) {
                 try {
                     val keyPair = WireGuardKeyGen.generateKeyPair()
                     val installId = generateRandomString(22)
@@ -69,26 +134,29 @@ class CloudflareApi(
                         put("type", "Android")
                     }
 
-                    val regRequest = Request.Builder()
-                        .url("$baseUrl/reg")
+                    val reqBuilder = Request.Builder()
+                        .url("${mirror.url}/reg")
                         .addHeader("User-Agent", "okhttp/3.12.1")
                         .addHeader("CF-Client-Version", "a-6.30-3900")
                         .addHeader("Content-Type", "application/json; charset=UTF-8")
                         .post(regBodyJson.toString().toRequestBody(jsonMediaType))
-                        .build()
 
-                    val regResponse = client.newCall(regRequest).execute()
+                    if (mirror.hostHeader != null) {
+                        reqBuilder.addHeader("Host", mirror.hostHeader)
+                    }
+
+                    val regResponse = client.newCall(reqBuilder.build()).execute()
                     val regCode = regResponse.code
                     val regBody = regResponse.body?.string().orEmpty()
                     regResponse.close()
 
                     if (regCode == 429) {
-                        delay(1000L * attempt)
+                        delay(600L * attempt)
                         continue
                     }
 
                     if (!regResponse.isSuccessful || regBody.isBlank()) {
-                        throw IllegalStateException("API HTTP $regCode: $regBody")
+                        throw IllegalStateException("Mirror ${mirror.name} HTTP $regCode: $regBody")
                     }
 
                     val regJson = JSONObject(regBody)
@@ -107,15 +175,18 @@ class CloudflareApi(
                         }
                     }
 
-                    val patchRequest = Request.Builder()
-                        .url("$baseUrl/reg/$accountId")
+                    val patchBuilder = Request.Builder()
+                        .url("${mirror.url}/reg/$accountId")
                         .addHeader("User-Agent", "okhttp/3.12.1")
                         .addHeader("CF-Client-Version", "a-6.30-3900")
                         .addHeader("Authorization", "Bearer $accessToken")
                         .patch(enableBodyJson.toString().toRequestBody(jsonMediaType))
-                        .build()
 
-                    val patchResponse = client.newCall(patchRequest).execute()
+                    if (mirror.hostHeader != null) {
+                        patchBuilder.addHeader("Host", mirror.hostHeader)
+                    }
+
+                    val patchResponse = client.newCall(patchBuilder.build()).execute()
                     val patchBody = patchResponse.body?.string().orEmpty()
                     patchResponse.close()
 
@@ -159,13 +230,12 @@ class CloudflareApi(
                     )
                 } catch (e: Exception) {
                     lastError = e
-                    delay(300)
+                    delay(200)
                 }
             }
         }
 
-        // If Cloudflare API was temporarily blocked by ISP or rate-limited,
-        // create a valid standalone WARP protocol profile so the user is NEVER blocked!
+        // Seamless fallback if all remote mirrors were temporarily blocked by ISP
         val fallback = createFallbackWarpConfig()
         Result.success(fallback)
     }
@@ -184,6 +254,8 @@ class CloudflareApi(
             "162.159.192.1:2408",
             "162.159.193.1:2408",
             "162.159.195.1:2408",
+            "188.114.96.1:2408",
+            "188.114.97.1:2408",
             "engage.cloudflareclient.com:2408"
         )
         val chosenEndpoint = warpEndpoints[Random().nextInt(warpEndpoints.size)]

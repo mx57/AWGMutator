@@ -18,22 +18,17 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
-import kotlinx.coroutines.launch
-import java.io.FileInputStream
-import java.io.FileOutputStream
 import java.net.InetAddress
 
 /**
  * Android Foreground VpnService implementing AmneziaWG / WireGuard TUN tunnel handling,
- * split tunneling routing, and runtime [DpiNoiseManager] handshake modulation.
+ * real [TunPacketRouter] UDP/DNS packet forwarding, and runtime [DpiNoiseManager] handshake modulation.
  */
 class AwgVpnService : VpnService() {
 
     private var vpnInterface: ParcelFileDescriptor? = null
     private val serviceScope = CoroutineScope(Dispatchers.IO + Job())
-    private var tunnelJob: Job? = null
+    private var packetRouter: TunPacketRouter? = null
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val action = intent?.action
@@ -80,8 +75,6 @@ class AwgVpnService : VpnService() {
         )
 
         try {
-            val dynamicWindowSize = App.instance.dpiNoiseManager.calculateDynamicWindowSize(config.mtu)
-
             val builder = Builder()
                 .setSession("AWGMutator - ${config.name}")
                 .setMtu(config.mtu.coerceIn(1280, 1420))
@@ -150,7 +143,18 @@ class AwgVpnService : VpnService() {
                     )
                 )
 
-                startTrafficLoop(vpnInterface!!, dynamicWindowSize)
+                // Start real User-space packet router with protected sockets
+                packetRouter?.stop()
+                packetRouter = TunPacketRouter(
+                    vpnService = this,
+                    fileDescriptor = vpnInterface!!.fileDescriptor,
+                    config = config,
+                    onTrafficUpdate = { rx, tx ->
+                        App.instance.tunnelManager.updateBytes(rx, tx)
+                    }
+                )
+                packetRouter?.start()
+
             } else {
                 stopTunnel("Failed to establish TUN interface")
             }
@@ -159,42 +163,9 @@ class AwgVpnService : VpnService() {
         }
     }
 
-    private fun startTrafficLoop(pfd: ParcelFileDescriptor, bufferSize: Int) {
-        tunnelJob?.cancel()
-        tunnelJob = serviceScope.launch {
-            val inputStream = FileInputStream(pfd.fileDescriptor)
-            val outputStream = FileOutputStream(pfd.fileDescriptor)
-            val effectiveBufferSize = bufferSize.coerceIn(16384, 131072)
-            val buffer = ByteArray(effectiveBufferSize)
-
-            var rxTotal = 0L
-            var txTotal = 0L
-
-            try {
-                while (isActive) {
-                    val available = inputStream.available()
-                    if (available > 0) {
-                        val read = inputStream.read(buffer, 0, minOf(available, buffer.size))
-                        if (read > 0) {
-                            rxTotal += read
-                            txTotal += read
-                            App.instance.tunnelManager.updateBytes(rxTotal, txTotal)
-                        }
-                    }
-                    delay(400)
-                }
-            } catch (_: Exception) {
-                // Loop terminated
-            } finally {
-                runCatching { inputStream.close() }
-                runCatching { outputStream.close() }
-            }
-        }
-    }
-
     private fun stopTunnel(errorMsg: String?) {
-        tunnelJob?.cancel()
-        tunnelJob = null
+        packetRouter?.stop()
+        packetRouter = null
 
         try {
             vpnInterface?.close()

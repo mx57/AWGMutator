@@ -1,11 +1,12 @@
 package com.example.evolution
 
+import com.example.domain.model.DnsCatalog
 import com.example.domain.model.Genome
 import java.util.Random
 
 /**
  * Mutates individual genes within configurable magnitude with specific Anti-DPI pattern shifts
- * (frequently altering Jmin/Jmax randomization spreads and payload fragmentation offsets).
+ * (frequently altering Jmin/Jmax randomization spreads, payload fragmentation offsets, and DNS resolvers).
  */
 class MutationStrategy(
     private val mutationRate: Double = 0.20,
@@ -26,6 +27,7 @@ class MutationStrategy(
         var h3 = genome.h3
         var h4 = genome.h4
         var mtu = genome.mtu
+        var dns = genome.dns
 
         fun mutateInt(value: Int, min: Int, max: Int): Int {
             if (random.nextDouble() > mutationRate) return value
@@ -61,6 +63,11 @@ class MutationStrategy(
         // Mutate MTU in safe stealth range
         mtu = mutateInt(mtu, 1280, 1400)
 
+        // Mutate DNS Server Resolver with probability
+        if (random.nextDouble() <= mutationRate * 1.25) {
+            dns = DnsCatalog.getRandomDns()
+        }
+
         return genome.copy(
             jc = jc,
             jmin = jmin,
@@ -73,7 +80,8 @@ class MutationStrategy(
             h2 = h2,
             h3 = h3,
             h4 = h4,
-            mtu = mtu
+            mtu = mtu,
+            dns = dns
         ).validated()
     }
 }

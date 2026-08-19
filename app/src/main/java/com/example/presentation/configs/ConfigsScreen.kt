@@ -6,6 +6,7 @@ import android.content.Context
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -29,10 +30,12 @@ import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Difference
 import androidx.compose.material.icons.filled.FileUpload
+import androidx.compose.material.icons.filled.NetworkCheck
 import androidx.compose.material.icons.filled.QrCode
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Share
+import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
@@ -76,6 +79,7 @@ import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.domain.model.AwgConfig
+import com.example.domain.model.DnsCatalog
 import com.example.domain.usecase.ObfuscationPreset
 import com.example.ui.theme.CyberCyan
 import com.example.ui.theme.CyberPurple
@@ -225,6 +229,8 @@ fun ConfigsScreen(
                     items(filteredConfigs, key = { it.id }) { config ->
                         ConfigItemCard(
                             config = config,
+                            isTesting = uiState.testingConfigId == config.id,
+                            onTestPing = { viewModel.testConfigEndpoint(config) },
                             onDelete = { viewModel.deleteConfig(config.id) },
                             onDuplicate = { viewModel.duplicateConfig(config) },
                             onShowQr = { viewModel.showQrDialog(config) },
@@ -253,8 +259,8 @@ fun ConfigsScreen(
     if (uiState.showAddDialog) {
         AddAwgConfigDialog(
             onDismiss = { viewModel.showAddDialog(false) },
-            onCreate = { name, endpoint, peerKey, preset, jc, jmin, jmax, s1, s2, s3, s4, h1, h2, h3, h4, mtu ->
-                viewModel.createCustomAwg(name, endpoint, peerKey, preset, jc, jmin, jmax, s1, s2, s3, s4, h1, h2, h3, h4, mtu)
+            onCreate = { name, endpoint, peerKey, dns, preset, jc, jmin, jmax, s1, s2, s3, s4, h1, h2, h3, h4, mtu ->
+                viewModel.createCustomAwg(name, endpoint, peerKey, dns, preset, jc, jmin, jmax, s1, s2, s3, s4, h1, h2, h3, h4, mtu)
             }
         )
     }
@@ -284,6 +290,8 @@ fun ConfigsScreen(
 @Composable
 fun ConfigItemCard(
     config: AwgConfig,
+    isTesting: Boolean = false,
+    onTestPing: () -> Unit,
     onDelete: () -> Unit,
     onDuplicate: () -> Unit,
     onShowQr: () -> Unit,
@@ -327,17 +335,40 @@ fun ConfigItemCard(
                             maxLines = 1,
                             overflow = TextOverflow.Ellipsis
                         )
-                        Text(
-                            text = "${config.endpoint} • DNS ${config.dns}",
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            Text(
+                                text = "${config.endpoint} • DNS ${config.dns}",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                                modifier = Modifier.weight(1f, fill = false)
+                            )
+                            if ((config.lastPingMs ?: 0L) > 0) {
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Surface(
+                                    shape = RoundedCornerShape(4.dp),
+                                    color = NeonGreen.copy(alpha = 0.15f)
+                                ) {
+                                    Text(
+                                        text = "${config.lastPingMs}ms",
+                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, color = NeonGreen),
+                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                    )
+                                }
+                            }
+                        }
                     }
                 }
 
-                Row {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(onClick = onTestPing) {
+                        if (isTesting) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), color = CyberCyan)
+                        } else {
+                            Icon(Icons.Default.Speed, contentDescription = "Test Ping", tint = CyberCyan, modifier = Modifier.size(20.dp))
+                        }
+                    }
                     IconButton(onClick = onDuplicate) {
                         Icon(Icons.Default.Difference, contentDescription = "Duplicate", tint = CyberCyan, modifier = Modifier.size(20.dp))
                     }
@@ -413,6 +444,11 @@ fun AdvancedWarpDialog(
                     style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                     color = CyberPurple
                 )
+                Text(
+                    text = "Automatic mirror failover enabled across 12+ Cloudflare gateways",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
 
                 Spacer(modifier = Modifier.height(12.dp))
 
@@ -447,11 +483,40 @@ fun AdvancedWarpDialog(
                 OutlinedTextField(
                     value = dnsChoice,
                     onValueChange = { dnsChoice = it },
-                    label = { Text("DNS (1.1.1.1, 1.1.1.2 malware block...)") },
+                    label = { Text("DNS Resolver") },
                     modifier = Modifier.fillMaxWidth()
                 )
 
-                Spacer(modifier = Modifier.height(12.dp))
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // DNS Preset Chips
+                Text("Select DNS Server Preset (18 Available):", style = MaterialTheme.typography.labelSmall, color = CyberCyan)
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    DnsCatalog.servers.forEach { server ->
+                        val isSelected = dnsChoice == server.formatted
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (isSelected) CyberCyan.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant,
+                            border = BorderStroke(1.dp, if (isSelected) CyberCyan else MaterialTheme.colorScheme.outline),
+                            modifier = Modifier.clickable { dnsChoice = server.formatted }
+                        ) {
+                            Text(
+                                text = server.name,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (isSelected) CyberCyan else MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
+                            )
+                        }
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
 
                 // Anti-DPI Obfuscation injection toggle
                 Row(
@@ -498,6 +563,7 @@ fun AddAwgConfigDialog(
         name: String,
         endpoint: String,
         peerKey: String,
+        dns: String,
         preset: ObfuscationPreset?,
         jc: Int,
         jmin: Int,
@@ -516,6 +582,7 @@ fun AddAwgConfigDialog(
     var name by remember { mutableStateOf("AmneziaWG Server") }
     var endpoint by remember { mutableStateOf("185.195.23.4:51820") }
     var peerKey by remember { mutableStateOf("") }
+    var dnsChoice by remember { mutableStateOf("1.1.1.1, 1.0.0.1") }
     var selectedPreset by remember { mutableStateOf<ObfuscationPreset?>(ObfuscationPreset.BALANCED) }
 
     var jc by remember { mutableIntStateOf(4) }
@@ -578,6 +645,43 @@ fun AddAwgConfigDialog(
                     modifier = Modifier.fillMaxWidth()
                 )
 
+                Spacer(modifier = Modifier.height(8.dp))
+
+                OutlinedTextField(
+                    value = dnsChoice,
+                    onValueChange = { dnsChoice = it },
+                    label = { Text("DNS Resolver") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                Text("Quick DNS Selector:", style = MaterialTheme.typography.labelSmall, color = CyberCyan)
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    DnsCatalog.servers.forEach { server ->
+                        val isSelected = dnsChoice == server.formatted
+                        Surface(
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (isSelected) CyberCyan.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant,
+                            border = BorderStroke(1.dp, if (isSelected) CyberCyan else MaterialTheme.colorScheme.outline),
+                            modifier = Modifier.clickable { dnsChoice = server.formatted }
+                        ) {
+                            Text(
+                                text = server.name,
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (isSelected) CyberCyan else MaterialTheme.colorScheme.onSurface,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
+                            )
+                        }
+                    }
+                }
+
                 Spacer(modifier = Modifier.height(14.dp))
                 Text("Obfuscation Headers (AmneziaWG 2.0)", style = MaterialTheme.typography.titleSmall, color = CyberPurple)
 
@@ -615,28 +719,59 @@ fun AddAwgConfigDialog(
                     OutlinedTextField(
                         value = s1.toString(),
                         onValueChange = { s1 = it.toIntOrNull() ?: s1 },
-                        label = { Text("S1") },
+                        label = { Text("S1 (0-64)") },
                         modifier = Modifier.weight(1f)
                     )
                     OutlinedTextField(
                         value = s2.toString(),
                         onValueChange = { s2 = it.toIntOrNull() ?: s2 },
-                        label = { Text("S2") },
+                        label = { Text("S2 (0-64)") },
                         modifier = Modifier.weight(1f)
                     )
+                }
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
                         value = s3.toString(),
                         onValueChange = { s3 = it.toIntOrNull() ?: s3 },
-                        label = { Text("S3") },
+                        label = { Text("S3 (0-64)") },
                         modifier = Modifier.weight(1f)
                     )
                     OutlinedTextField(
                         value = s4.toString(),
                         onValueChange = { s4 = it.toIntOrNull() ?: s4 },
-                        label = { Text("S4") },
+                        label = { Text("S4 (0-32)") },
                         modifier = Modifier.weight(1f)
                     )
                 }
+
+                OutlinedTextField(
+                    value = h1.toString(),
+                    onValueChange = { h1 = it.toLongOrNull() ?: h1 },
+                    label = { Text("H1 (Initiation Magic)") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                OutlinedTextField(
+                    value = h2.toString(),
+                    onValueChange = { h2 = it.toLongOrNull() ?: h2 },
+                    label = { Text("H2 (Response Magic)") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                OutlinedTextField(
+                    value = h3.toString(),
+                    onValueChange = { h3 = it.toLongOrNull() ?: h3 },
+                    label = { Text("H3 (Cookie Magic)") },
+                    modifier = Modifier.fillMaxWidth()
+                )
+
+                OutlinedTextField(
+                    value = h4.toString(),
+                    onValueChange = { h4 = it.toLongOrNull() ?: h4 },
+                    label = { Text("H4 (Transport Magic)") },
+                    modifier = Modifier.fillMaxWidth()
+                )
 
                 Spacer(modifier = Modifier.height(18.dp))
 
@@ -647,11 +782,11 @@ fun AddAwgConfigDialog(
                     Spacer(modifier = Modifier.width(8.dp))
                     Button(
                         onClick = {
-                            onCreate(name, endpoint, peerKey, selectedPreset, jc, jmin, jmax, s1, s2, s3, s4, h1, h2, h3, h4, mtu)
+                            onCreate(name, endpoint, peerKey, dnsChoice, selectedPreset, jc, jmin, jmax, s1, s2, s3, s4, h1, h2, h3, h4, mtu)
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = CyberCyan)
                     ) {
-                        Text("Save Profile", color = MaterialTheme.colorScheme.onPrimary)
+                        Text("Save Config", color = MaterialTheme.colorScheme.onPrimary)
                     }
                 }
             }
@@ -662,38 +797,37 @@ fun AddAwgConfigDialog(
 @Composable
 fun ImportConfigDialog(
     onDismiss: () -> Unit,
-    onImport: (text: String, name: String) -> Unit
+    onImport: (rawText: String, name: String) -> Unit
 ) {
-    var configText by remember { mutableStateOf("") }
-    var configName by remember { mutableStateOf("Imported Profile") }
+    var rawText by remember { mutableStateOf("") }
+    var name by remember { mutableStateOf("") }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text("Import .conf File") },
+        title = { Text("Import AWG / WireGuard Config", color = CyberCyan) },
         text = {
             Column {
                 OutlinedTextField(
-                    value = configName,
-                    onValueChange = { configName = it },
-                    label = { Text("Configuration Name") },
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Profile Name (Optional)") },
                     modifier = Modifier.fillMaxWidth()
                 )
                 Spacer(modifier = Modifier.height(8.dp))
                 OutlinedTextField(
-                    value = configText,
-                    onValueChange = { configText = it },
-                    label = { Text("Paste .conf content ([Interface], [Peer]...)") },
+                    value = rawText,
+                    onValueChange = { rawText = it },
+                    label = { Text("Paste .conf content") },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(180.dp),
-                    maxLines = 15
+                        .height(160.dp),
+                    maxLines = 10
                 )
             }
         },
         confirmButton = {
             Button(
-                onClick = { onImport(configText, configName) },
-                enabled = configText.isNotBlank(),
+                onClick = { onImport(rawText, name) },
                 colors = ButtonDefaults.buttonColors(containerColor = CyberCyan)
             ) {
                 Text("Import", color = MaterialTheme.colorScheme.onPrimary)
@@ -712,45 +846,50 @@ fun QrCodeViewerDialog(
     config: AwgConfig,
     onDismiss: () -> Unit
 ) {
-    val qrBitmap = remember(config) {
-        QrCodeGenerator.generateQrBitmap(config.toConfString(), 400)
+    val confText = remember(config) { config.toConfString() }
+    val qrBitmap = remember(confText) {
+        QrCodeGenerator.generateQrBitmap(confText, 600)
     }
 
-    Dialog(onDismissRequest = onDismiss) {
-        Surface(
-            shape = RoundedCornerShape(16.dp),
-            color = MaterialTheme.colorScheme.surface,
-            modifier = Modifier.padding(16.dp)
-        ) {
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Text(
+                text = "${config.name} (QR)",
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                color = CyberCyan
+            )
+        },
+        text = {
             Column(
-                modifier = Modifier.padding(20.dp),
+                modifier = Modifier.fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
+                qrBitmap?.let { bmp ->
+                    Image(
+                        bitmap = bmp.asImageBitmap(),
+                        contentDescription = "Config QR Code",
+                        modifier = Modifier
+                            .size(240.dp)
+                            .padding(8.dp)
+                    )
+                } ?: run {
+                    Text("Failed to generate QR Code")
+                }
+                Spacer(modifier = Modifier.height(8.dp))
                 Text(
-                    text = config.name,
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
-                )
-                Spacer(modifier = Modifier.height(16.dp))
-
-                Image(
-                    bitmap = qrBitmap.asImageBitmap(),
-                    contentDescription = "QR Code",
-                    modifier = Modifier.size(240.dp)
-                )
-
-                Spacer(modifier = Modifier.height(16.dp))
-                Text(
-                    text = "Scan with AmneziaVPN or WireGuard client",
+                    text = "Scan with AmneziaWG or WireGuard app",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-                Spacer(modifier = Modifier.height(12.dp))
-                Button(onClick = onDismiss, colors = ButtonDefaults.buttonColors(containerColor = CyberCyan)) {
-                    Text("Close", color = MaterialTheme.colorScheme.onPrimary)
-                }
+            }
+        },
+        confirmButton = {
+            Button(onClick = onDismiss, colors = ButtonDefaults.buttonColors(containerColor = CyberCyan)) {
+                Text("Close", color = MaterialTheme.colorScheme.onPrimary)
             }
         }
-    }
+    )
 }
 
 @Composable
@@ -759,27 +898,31 @@ fun ExportConfigDialog(
     onDismiss: () -> Unit
 ) {
     val context = LocalContext.current
-    val confString = remember(config) { config.toConfString() }
+    val confText = remember(config) { config.toConfString() }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = { Text(config.name) },
+        title = {
+            Text(
+                text = "Export ${config.name}",
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                color = CyberPurple
+            )
+        },
         text = {
-            Column {
-                Text("Raw WireGuard / AmneziaWG Configuration:", style = MaterialTheme.typography.bodySmall)
-                Spacer(modifier = Modifier.height(8.dp))
+            Column(modifier = Modifier.fillMaxWidth()) {
                 Surface(
                     shape = RoundedCornerShape(8.dp),
-                    color = MaterialTheme.colorScheme.surfaceVariant,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(200.dp)
+                    color = MaterialTheme.colorScheme.surface,
+                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
+                    modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = confString,
+                        text = confText,
                         style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace, fontSize = 11.sp),
                         modifier = Modifier
                             .padding(10.dp)
+                            .height(200.dp)
                             .verticalScroll(rememberScrollState())
                     )
                 }
@@ -789,19 +932,20 @@ fun ExportConfigDialog(
             Button(
                 onClick = {
                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    clipboard.setPrimaryClip(ClipData.newPlainText("AWG Config", confString))
+                    val clip = ClipData.newPlainText("AWG Config", confText)
+                    clipboard.setPrimaryClip(clip)
                     onDismiss()
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = CyberCyan)
             ) {
                 Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(4.dp))
-                Text("Copy to Clipboard", color = MaterialTheme.colorScheme.onPrimary)
+                Text("Copy .conf", color = MaterialTheme.colorScheme.onPrimary)
             }
         },
         dismissButton = {
             TextButton(onClick = onDismiss) {
-                Text("Done")
+                Text("Close")
             }
         }
     )

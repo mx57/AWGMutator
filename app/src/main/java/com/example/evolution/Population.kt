@@ -1,11 +1,12 @@
 package com.example.evolution
 
+import com.example.domain.model.DnsCatalog
 import com.example.domain.model.Genome
 import java.util.Random
 import java.util.UUID
 
 /**
- * Manages generation and tournament selection of Genomes.
+ * Manages generation and tournament selection of Genomes with DNS server integration.
  */
 class Population(
     val size: Int = 12,
@@ -34,6 +35,7 @@ class Population(
             val h2 = (random.nextLong() and 0x7FFFFFFF) + 2000000L
             val h3 = (random.nextLong() and 0x7FFFFFFF) + 3000000L
             val h4 = (random.nextLong() and 0x7FFFFFFF) + 4000000L
+            val dns = DnsCatalog.getRandomDns()
 
             val genome = Genome(
                 jc = jc,
@@ -48,6 +50,7 @@ class Population(
                 h3 = h3,
                 h4 = h4,
                 mtu = mtu,
+                dns = dns,
                 generation = 1
             ).validated()
             list.add(genome)
