@@ -75,7 +75,7 @@ class AwgVpnService : VpnService() {
         if (wakeLock == null) {
             val pm = getSystemService(Context.POWER_SERVICE) as? PowerManager
             wakeLock = pm?.newWakeLock(PowerManager.PARTIAL_WAKE_LOCK, "AWGMutator:VpnWakeLock")?.apply {
-                acquire(10 * 60 * 1000L /* 10 hours max safety timeout */)
+                acquire(10 * 60 * 60 * 1000L /* 10 hours max safety timeout */)
             }
         }
         if (wifiLock == null) {
