@@ -1,5 +1,8 @@
 package com.example.presentation.dashboard
 
+import android.app.Activity
+import androidx.activity.compose.rememberLauncherForActivityResult
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.animateFloat
@@ -93,6 +96,23 @@ fun DashboardScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val appStats by viewModel.appStats.collectAsStateWithLifecycle()
     val tunnelLogs by viewModel.tunnelLogs.collectAsStateWithLifecycle()
+
+    val vpnPermissionLauncher = rememberLauncherForActivityResult(
+        contract = ActivityResultContracts.StartActivityForResult()
+    ) { result ->
+        if (result.resultCode == Activity.RESULT_OK) {
+            viewModel.startVpnDirectly()
+        } else {
+            viewModel.onVpnPermissionDenied()
+        }
+    }
+
+    LaunchedEffect(uiState.vpnPrepareIntent) {
+        uiState.vpnPrepareIntent?.let { intent ->
+            vpnPermissionLauncher.launch(intent)
+            viewModel.clearVpnPrepareIntent()
+        }
+    }
 
     LaunchedEffect(uiState.userMessage) {
         uiState.userMessage?.let {

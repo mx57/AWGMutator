@@ -75,6 +75,20 @@ class NetworkEgressVerifier(
         )
     }
 
+    fun probeUrl(url: String): Boolean {
+        return try {
+            val request = Request.Builder()
+                .url(url)
+                .header("User-Agent", "Mozilla/5.0 (Android; Mobile; rv:120.0) Gecko/120.0 Firefox/120.0")
+                .build()
+            client.newCall(request).execute().use { response ->
+                response.isSuccessful || response.code in 200..399
+            }
+        } catch (_: Exception) {
+            false
+        }
+    }
+
     private fun tryCloudflareTrace(): NetworkEgressResult? {
         val endpoints = listOf(
             "https://1.1.1.1/cdn-cgi/trace",

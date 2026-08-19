@@ -55,7 +55,21 @@ class SettingsViewModel(
 
     fun setRootModeEnabled(enabled: Boolean) {
         rootTunnelManager.isRootModeEnabled = enabled
-        _uiState.value = _uiState.value.copy(isRootModeEnabled = enabled)
+        val msg = if (enabled && !_uiState.value.isRootDeviceAvailable) {
+            "Root (su) not found on device. VPN will use Android VpnService."
+        } else if (enabled) {
+            "Root Mode Enabled (su kernel bypass active)"
+        } else {
+            "Standard Android VpnService Mode enabled"
+        }
+        _uiState.value = _uiState.value.copy(
+            isRootModeEnabled = enabled,
+            userMessage = msg
+        )
+    }
+
+    fun clearMessage() {
+        _uiState.value = _uiState.value.copy(userMessage = null)
     }
 
     fun loadInstalledApps() {
@@ -86,9 +100,5 @@ class SettingsViewModel(
 
     fun setSearchQuery(query: String) {
         _uiState.value = _uiState.value.copy(searchQuery = query)
-    }
-
-    fun clearMessage() {
-        _uiState.value = _uiState.value.copy(userMessage = null)
     }
 }

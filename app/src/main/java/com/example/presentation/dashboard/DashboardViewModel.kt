@@ -1,6 +1,7 @@
 package com.example.presentation.dashboard
 
 import android.content.Context
+import android.content.Intent
 import android.net.VpnService
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
@@ -15,6 +16,7 @@ import com.example.domain.model.VpnStatus
 import com.example.domain.repository.ConfigRepository
 import com.example.domain.usecase.GenerateHybridWarpAwgUseCase
 import com.example.domain.usecase.GenerateWarpConfigUseCase
+import com.example.util.RootRunner
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -33,7 +35,8 @@ data class DashboardUiState(
     val measuredPingMs: Long? = null,
     val egressResult: NetworkEgressResult? = null,
     val serviceResults: List<ServiceProbeResult> = emptyList(),
-    val userMessage: String? = null
+    val userMessage: String? = null,
+    val vpnPrepareIntent: Intent? = null
 )
 
 class DashboardViewModel(
@@ -82,43 +85,76 @@ class DashboardViewModel(
             viewModelScope.launch {
                 if (isRootMode) {
                     App.instance.rootTunnelManager.disconnect()
-                } else {
-                    App.instance.tunnelManager.disconnect()
                 }
+                App.instance.tunnelManager.disconnect()
             }
         } else {
             val configToUse = _uiState.value.selectedConfig ?: configs.value.firstOrNull()
             if (configToUse != null) {
                 if (isRootMode) {
                     viewModelScope.launch {
-                        val res = App.instance.rootTunnelManager.connect(configToUse)
-                        if (res.isFailure) {
-                            _uiState.value = _uiState.value.copy(
-                                userMessage = "Root connection error: ${res.exceptionOrNull()?.message}"
-                            )
+                        val isRootAvailable = RootRunner.isRootAvailable()
+                        if (isRootAvailable) {
+                            val res = App.instance.rootTunnelManager.connect(configToUse)
+                            if (res.isFailure) {
+                                _uiState.value = _uiState.value.copy(
+                                    userMessage = "Root error: ${res.exceptionOrNull()?.message}"
+                                )
+                            } else {
+                                verifyNetworkEgress()
+                                checkBlockedServices()
+                            }
                         } else {
-                            verifyNetworkEgress()
-                            checkBlockedServices()
+                            // Device is not rooted, fallback automatically to standard Android VpnService
+                            _uiState.value = _uiState.value.copy(
+                                userMessage = "Root (su) not found on device. Connecting via standard Android VPN..."
+                            )
+                            startStandardVpn(context, configToUse)
                         }
                     }
                 } else {
-                    val prepareIntent = VpnService.prepare(context)
-                    if (prepareIntent == null) {
-                        App.instance.tunnelManager.connect(configToUse)
-                        verifyNetworkEgress()
-                        checkBlockedServices()
-                    } else {
-                        _uiState.value = _uiState.value.copy(
-                            userMessage = "VPN permission required. Please grant permission."
-                        )
-                    }
+                    startStandardVpn(context, configToUse)
                 }
             } else {
+                // Auto-generate WARP config if none exist
                 _uiState.value = _uiState.value.copy(
-                    userMessage = "No config available. Generate WARP or create an AWG config first."
+                    userMessage = "Generating WARP config for instant connection..."
                 )
+                generateQuickWarp()
             }
         }
+    }
+
+    private fun startStandardVpn(context: Context, config: AwgConfig) {
+        val prepareIntent = VpnService.prepare(context)
+        if (prepareIntent == null) {
+            // VPN permission already granted
+            App.instance.tunnelManager.connect(config)
+            verifyNetworkEgress()
+            checkBlockedServices()
+        } else {
+            // Launch OS system VPN dialog
+            _uiState.value = _uiState.value.copy(vpnPrepareIntent = prepareIntent)
+        }
+    }
+
+    fun startVpnDirectly() {
+        val configToUse = _uiState.value.selectedConfig ?: configs.value.firstOrNull()
+        if (configToUse != null) {
+            App.instance.tunnelManager.connect(configToUse)
+            verifyNetworkEgress()
+            checkBlockedServices()
+        }
+    }
+
+    fun clearVpnPrepareIntent() {
+        _uiState.value = _uiState.value.copy(vpnPrepareIntent = null)
+    }
+
+    fun onVpnPermissionDenied() {
+        _uiState.value = _uiState.value.copy(
+            userMessage = "VPN permission was not granted. Please allow the VPN connection prompt."
+        )
     }
 
     fun verifyNetworkEgress() {
@@ -139,84 +175,75 @@ class DashboardViewModel(
         }
     }
 
-    fun generateQuickWarp() {
-        viewModelScope.launch(Dispatchers.IO) {
-            _uiState.value = _uiState.value.copy(isGeneratingWarp = true)
-            val result = generateWarpUseCase("Cloudflare WARP (Auto)")
-            withContext(Dispatchers.Main) {
-                if (result.isSuccess) {
-                    val created = result.getOrThrow()
-                    _uiState.value = _uiState.value.copy(
-                        isGeneratingWarp = false,
-                        selectedConfig = created,
-                        userMessage = "Cloudflare WARP config created successfully!"
-                    )
-                } else {
-                    val msg = result.exceptionOrNull()?.localizedMessage ?: "Unknown error"
-                    _uiState.value = _uiState.value.copy(
-                        isGeneratingWarp = false,
-                        userMessage = "WARP generation note: $msg"
-                    )
-                }
-            }
-        }
-    }
-
-    fun generateHybridAntiDpi() {
-        viewModelScope.launch(Dispatchers.IO) {
-            _uiState.value = _uiState.value.copy(isGeneratingWarp = true)
-            val result = generateHybridUseCase("WARP + Anti-DPI Obfuscation")
-            withContext(Dispatchers.Main) {
-                if (result.isSuccess) {
-                    val created = result.getOrThrow()
-                    _uiState.value = _uiState.value.copy(
-                        isGeneratingWarp = false,
-                        selectedConfig = created,
-                        userMessage = "Hybrid Anti-DPI profile created!"
-                    )
-                } else {
-                    val msg = result.exceptionOrNull()?.localizedMessage ?: "Unknown error"
-                    _uiState.value = _uiState.value.copy(
-                        isGeneratingWarp = false,
-                        userMessage = "Hybrid generation note: $msg"
-                    )
-                }
-            }
-        }
-    }
-
     fun checkBlockedServices() {
         viewModelScope.launch(Dispatchers.IO) {
             _uiState.value = _uiState.value.copy(isTestingServices = true)
-            val results = App.instance.pingTester.evaluateBlockedServices(BlockedServicesCatalog.allServices)
-            val unblockedCount = results.count { it.isAccessible }
+            val results = BlockedServicesCatalog.allServices.map { service ->
+                val ok = App.instance.networkEgressVerifier.probeUrl(service.testUrl)
+                ServiceProbeResult(
+                    service = service,
+                    isAccessible = ok
+                )
+            }
             withContext(Dispatchers.Main) {
                 _uiState.value = _uiState.value.copy(
                     isTestingServices = false,
-                    serviceResults = results,
-                    userMessage = "Checked ${results.size} blocked services: $unblockedCount/${results.size} unblocked"
+                    serviceResults = results
                 )
             }
         }
     }
 
     fun runSpeedPingCheck() {
+        val activeConfig = _uiState.value.selectedConfig ?: configs.value.firstOrNull() ?: return
         viewModelScope.launch(Dispatchers.IO) {
             _uiState.value = _uiState.value.copy(isTestingSpeed = true)
-            val fitnessResult = App.instance.pingTester.evaluateTargets(
-                genomeId = "manual_check",
-                targets = App.instance.pingTester.defaultTargets,
-                attemptsPerTarget = 1
-            )
+            val pingResult = App.instance.pingTester.testEndpoint(activeConfig.endpoint)
             withContext(Dispatchers.Main) {
                 _uiState.value = _uiState.value.copy(
                     isTestingSpeed = false,
-                    measuredPingMs = if (fitnessResult.successRate > 0) fitnessResult.avgPingMs else null,
-                    userMessage = if (fitnessResult.successRate > 0) {
-                        "Ping tested: ${fitnessResult.avgPingMs} ms (${(fitnessResult.successRate * 100).toInt()}% reachability)"
-                    } else {
-                        "Ping check: host unreachable"
-                    }
+                    measuredPingMs = pingResult.latencyMs,
+                    userMessage = "Endpoint ${activeConfig.endpoint}: Latency ${pingResult.latencyMs}ms"
+                )
+            }
+        }
+    }
+
+    fun generateQuickWarp() {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isGeneratingWarp = true)
+            val result = generateWarpUseCase()
+            if (result.isSuccess) {
+                val newConfig = result.getOrNull()
+                _uiState.value = _uiState.value.copy(
+                    isGeneratingWarp = false,
+                    selectedConfig = newConfig,
+                    userMessage = "WARP profile generated successfully! Ready to connect."
+                )
+            } else {
+                _uiState.value = _uiState.value.copy(
+                    isGeneratingWarp = false,
+                    userMessage = "Error generating WARP: ${result.exceptionOrNull()?.message}"
+                )
+            }
+        }
+    }
+
+    fun generateHybridAntiDpi() {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isGeneratingWarp = true)
+            val result = generateHybridUseCase()
+            if (result.isSuccess) {
+                val newConfig = result.getOrNull()
+                _uiState.value = _uiState.value.copy(
+                    isGeneratingWarp = false,
+                    selectedConfig = newConfig,
+                    userMessage = "WARP + Anti-DPI profile created with customized handshake noise parameters!"
+                )
+            } else {
+                _uiState.value = _uiState.value.copy(
+                    isGeneratingWarp = false,
+                    userMessage = "Error generating Hybrid profile: ${result.exceptionOrNull()?.message}"
                 )
             }
         }
@@ -230,4 +257,3 @@ class DashboardViewModel(
         App.instance.tunnelManager.clearLogs()
     }
 }
-
