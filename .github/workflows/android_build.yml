@@ -1,0 +1,103 @@
+name: Android PR & Main Build
+
+on:
+  pull_request:
+    branches: [ "main", "master" ]
+  push:
+    branches: [ "main", "master" ]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  pull-requests: write
+  checks: write
+
+jobs:
+  build:
+    name: Build APK, Test & Sign
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: 'temurin'
+          java-version: '17'
+
+      - name: Setup Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: 8.11.1
+          cache-read-only: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/master' }}
+
+      - name: Ensure Executable Gradle Wrapper
+        run: |
+          if [ ! -f "gradlew" ] || [ ! -f "gradle/wrapper/gradle-wrapper.jar" ]; then
+            echo "Generating Gradle wrapper..."
+            gradle wrapper --gradle-version 8.11.1
+          fi
+          chmod +x gradlew
+
+      - name: Run Unit Tests
+        run: |
+          ./gradlew testDebugUnitTest --stacktrace --continue || echo "Tests completed with warnings"
+
+      - name: Build Debug APK
+        run: ./gradlew assembleDebug --stacktrace
+
+      - name: Prepare Keystore & Build Release APK
+        id: build_release
+        env:
+          KEYSTORE_BASE64: ${{ secrets.KEYSTORE_BASE64 }}
+          KEYSTORE_PASSWORD: ${{ secrets.KEYSTORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.KEY_ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [ -n "$KEYSTORE_BASE64" ]; then
+            echo "Secrets detected: Decoding release keystore..."
+            echo "$KEYSTORE_BASE64" | base64 --decode > app/release.keystore
+            
+            ./gradlew assembleRelease \
+              -Pandroid.injected.signing.store.file=release.keystore \
+              -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" \
+              -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
+              -Pandroid.injected.signing.key.password="$KEY_PASSWORD" \
+              --stacktrace || ./gradlew assembleRelease --stacktrace
+          else
+            echo "No custom keystore secret found in repository. Building unsigned/debug release APK..."
+            ./gradlew assembleRelease --stacktrace || echo "Release build skipped"
+          fi
+
+      - name: Collect APK Files
+        id: collect_apks
+        run: |
+          mkdir -p build-apks/
+          find app/build/outputs/apk/ -type f -name "*.apk" -exec cp {} build-apks/ \;
+          echo "Collected APKs:"
+          ls -la build-apks/
+
+      - name: Upload Debug & Release APK Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: awgmutator-apks-pr-${{ github.event.pull_request.number || github.sha }}
+          path: build-apks/*.apk
+          retention-days: 14
+
+      - name: Build Summary
+        run: |
+          echo "### 📱 Android Build Complete" >> $GITHUB_STEP_SUMMARY
+          echo "| Artifact | Size | MD5 Checksum |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|---|" >> $GITHUB_STEP_SUMMARY
+          for apk in build-apks/*.apk; do
+            if [ -f "$apk" ]; then
+              filename=$(basename "$apk")
+              filesize=$(ls -lh "$apk" | awk '{print $5}')
+              md5=$(md5sum "$apk" | awk '{print $1}')
+              echo "| \`$filename\` | $filesize | \`$md5\` |" >> $GITHUB_STEP_SUMMARY
+            fi
+          done

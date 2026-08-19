@@ -358,6 +358,8 @@ fun FitnessChart(
     history: List<Pair<Int, Double>>,
     modifier: Modifier = Modifier
 ) {
+    val chartPath = remember { Path() }
+
     Surface(
         modifier = modifier,
         shape = RoundedCornerShape(12.dp),
@@ -384,15 +386,14 @@ fun FitnessChart(
                     Offset(x, y.coerceIn(0f, size.height))
                 }
 
-                val path = Path().apply {
-                    moveTo(points.first().x, points.first().y)
-                    for (i in 1 until points.size) {
-                        lineTo(points[i].x, points[i].y)
-                    }
+                chartPath.reset()
+                chartPath.moveTo(points.first().x, points.first().y)
+                for (i in 1 until points.size) {
+                    chartPath.lineTo(points[i].x, points[i].y)
                 }
 
                 drawPath(
-                    path = path,
+                    path = chartPath,
                     color = CyberCyan,
                     style = Stroke(width = 3.dp.toPx())
                 )

@@ -34,6 +34,7 @@ import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -58,6 +59,7 @@ import com.example.ui.theme.WarningAmber
 /**
  * High-performance realtime canvas visualizing peer probe latency distribution,
  * dynamic success rate gauges, and candidate probe timelines during the genetic evolution phase.
+ * Optimized with cached Path reuse to prevent ashmem native memory thrashing on Android Q+.
  */
 @Composable
 fun RealtimeLatencyCanvas(
@@ -79,6 +81,10 @@ fun RealtimeLatencyCanvas(
         ),
         label = "glow"
     )
+
+    // Cached paths to avoid native Skia/ashmem allocations on every animated frame
+    val trendPath = remember { Path() }
+    val gradientAreaPath = remember { Path() }
 
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -233,8 +239,8 @@ fun RealtimeLatencyCanvas(
                     val stepX = width / probes.size.coerceAtLeast(1)
                     val maxLatency = probes.maxOfOrNull { it.first }?.coerceAtLeast(150L)?.toFloat() ?: 150f
 
-                    val path = Path()
-                    val areaPath = Path()
+                    trendPath.reset()
+                    gradientAreaPath.reset()
 
                     for (index in probes.indices) {
                         val pair = probes[index]
@@ -266,30 +272,30 @@ fun RealtimeLatencyCanvas(
                         )
 
                         if (index == 0) {
-                            path.moveTo(x, y)
-                            areaPath.moveTo(x, height)
-                            areaPath.lineTo(x, y)
+                            trendPath.moveTo(x, y)
+                            gradientAreaPath.moveTo(x, height)
+                            gradientAreaPath.lineTo(x, y)
                         } else {
-                            path.lineTo(x, y)
-                            areaPath.lineTo(x, y)
+                            trendPath.lineTo(x, y)
+                            gradientAreaPath.lineTo(x, y)
                         }
 
                         if (index == probes.size - 1) {
-                            areaPath.lineTo(x, height)
-                            areaPath.close()
+                            gradientAreaPath.lineTo(x, height)
+                            gradientAreaPath.close()
                         }
                     }
 
                     // Trend Line
                     drawPath(
-                        path = path,
+                        path = trendPath,
                         color = CyberCyan,
                         style = Stroke(width = 2.dp.toPx(), cap = StrokeCap.Round)
                     )
 
                     // Gradient under trend
                     drawPath(
-                        path = areaPath,
+                        path = gradientAreaPath,
                         brush = Brush.verticalGradient(
                             colors = listOf(CyberCyan.copy(alpha = 0.25f), Color.Transparent)
                         )
