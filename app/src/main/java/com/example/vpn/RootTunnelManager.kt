@@ -108,9 +108,23 @@ class RootTunnelManager(private val context: Context) {
                 activeConfigName = config.name,
                 activeConfigId = config.id,
                 endpoint = config.endpoint,
-                connectedSince = System.currentTimeMillis()
+                connectedSince = System.currentTimeMillis(),
+                isRootTunnel = true
             )
+            com.example.App.instance.appTrafficTracker.startTracking()
             startStatsMonitor()
+
+            // Verify internet egress for root tunnel
+            scope.launch {
+                val egress = com.example.App.instance.networkEgressVerifier.verifyEgress()
+                _status.value = _status.value.copy(
+                    egressIp = egress.publicIp,
+                    egressCountry = egress.countryCode,
+                    isEgressVerified = egress.isFunctional,
+                    currentPingMs = egress.latencyMs
+                )
+            }
+
             Result.success(Unit)
         } else {
             teardownInterface()
@@ -126,13 +140,16 @@ class RootTunnelManager(private val context: Context) {
         _status.value = _status.value.copy(state = VpnState.DISCONNECTING)
         statsJob?.cancel()
         statsJob = null
+        com.example.App.instance.appTrafficTracker.stopTracking()
 
         teardownInterface()
 
         _status.value = _status.value.copy(
             state = VpnState.DISCONNECTED,
             activeConfigName = null,
-            activeConfigId = null
+            activeConfigId = null,
+            isRootTunnel = false,
+            isEgressVerified = false
         )
         Result.success(Unit)
     }

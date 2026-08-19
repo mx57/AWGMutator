@@ -189,9 +189,9 @@ class AwgVpnService : VpnService() {
             vpnInterface = builder.establish()
 
             if (vpnInterface != null) {
-                updateNotification("Verifying connection to ${config.name}...")
+                updateNotification("Active: ${config.name} [Anti-DPI Guard]")
 
-                // Start real User-space packet router first
+                // Start real User-space packet router
                 packetRouter?.stop()
                 packetRouter = TunPacketRouter(
                     vpnService = this,
@@ -203,22 +203,38 @@ class AwgVpnService : VpnService() {
                 )
                 packetRouter?.start()
 
-                // Perform ping/handshake verification in background before marking CONNECTED
+                // Start Per-App traffic monitoring
+                App.instance.appTrafficTracker.startTracking()
+
+                // Mark VPN as CONNECTED
+                App.instance.tunnelManager.updateStatus(
+                    VpnStatus(
+                        state = VpnState.CONNECTED,
+                        activeConfigName = config.name,
+                        activeConfigId = config.id,
+                        endpoint = config.endpoint,
+                        connectedSince = System.currentTimeMillis()
+                    )
+                )
+
+                // Perform real egress and internet exit reachability check in background
                 serviceScope.launch {
+                    val egress = App.instance.networkEgressVerifier.verifyEgress()
                     val pingResult = App.instance.pingTester.testEndpoint(config.endpoint)
-                    if (pingResult.isReachable) {
-                        updateNotification("Connected: ${config.name} [Anti-DPI Active]")
+
+                    val current = App.instance.tunnelManager.status.value
+                    if (current.state == VpnState.CONNECTED) {
                         App.instance.tunnelManager.updateStatus(
-                            VpnStatus(
-                                state = VpnState.CONNECTED,
-                                activeConfigName = config.name,
-                                activeConfigId = config.id,
-                                endpoint = config.endpoint,
-                                connectedSince = System.currentTimeMillis()
+                            current.copy(
+                                egressIp = egress.publicIp,
+                                egressCountry = egress.countryCode,
+                                isEgressVerified = egress.isFunctional,
+                                currentPingMs = egress.latencyMs ?: pingResult.latencyMs
                             )
                         )
-                    } else {
-                        stopTunnel("Endpoint unreachable: ${pingResult.error ?: "No response from peer"}")
+                        if (egress.isFunctional) {
+                            updateNotification("Connected: ${config.name} (${egress.publicIp ?: "Online"})")
+                        }
                     }
                 }
 
@@ -231,6 +247,7 @@ class AwgVpnService : VpnService() {
     }
 
     private fun stopTunnel(errorMsg: String?) {
+        App.instance.appTrafficTracker.stopTracking()
         packetRouter?.stop()
         packetRouter = null
 

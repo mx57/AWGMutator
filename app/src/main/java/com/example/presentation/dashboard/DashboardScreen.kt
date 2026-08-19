@@ -83,6 +83,7 @@ fun DashboardScreen(
     onNavigateToEvolution: () -> Unit,
     onNavigateToConfigs: () -> Unit,
     onNavigateToAntiDpi: () -> Unit = {},
+    onNavigateToSettings: () -> Unit = {},
     snackbarHostState: SnackbarHostState,
     viewModel: DashboardViewModel = viewModel()
 ) {
@@ -90,6 +91,7 @@ fun DashboardScreen(
     val vpnStatus by viewModel.vpnStatus.collectAsStateWithLifecycle()
     val configs by viewModel.configs.collectAsStateWithLifecycle()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val appStats by viewModel.appStats.collectAsStateWithLifecycle()
 
     LaunchedEffect(uiState.userMessage) {
         uiState.userMessage?.let {
@@ -425,6 +427,24 @@ fun DashboardScreen(
                 }
             }
         }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        // Internet Exit & Egress Verification Card
+        NetworkEgressCard(
+            vpnStatus = vpnStatus,
+            egressResult = uiState.egressResult,
+            isVerifying = uiState.isVerifyingEgress,
+            onVerifyEgress = { viewModel.verifyNetworkEgress() }
+        )
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        // App Traffic Telemetry & Connection Status Card
+        AppTrafficDashboardCard(
+            appStats = appStats,
+            onOpenSplitTunnelSettings = onNavigateToSettings
+        )
 
         Spacer(modifier = Modifier.height(16.dp))
 

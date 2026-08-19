@@ -64,12 +64,17 @@ fun SettingsScreen(
     viewModel: SettingsViewModel = viewModel()
 ) {
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val appStats by viewModel.appStats.collectAsStateWithLifecycle()
 
     LaunchedEffect(uiState.userMessage) {
         uiState.userMessage?.let {
             snackbarHostState.showSnackbar(it)
             viewModel.clearMessage()
         }
+    }
+
+    val trafficMap = remember(appStats) {
+        appStats.associateBy { it.packageName }
     }
 
     val filteredApps = remember(uiState.installedApps, uiState.searchQuery) {
@@ -226,11 +231,18 @@ fun SettingsScreen(
                 ) {
                     items(filteredApps, key = { it.packageName }) { app ->
                         val isChecked = uiState.selectedPackages.contains(app.packageName)
+                        val stat = trafficMap[app.packageName]
+                        val isRouted = when (uiState.splitMode) {
+                            SplitTunnelMode.ALL_THROUGH_VPN -> true
+                            SplitTunnelMode.ONLY_SELECTED_THROUGH_VPN -> isChecked
+                            SplitTunnelMode.ALL_EXCEPT_SELECTED -> !isChecked
+                        }
+
                         Card(
                             modifier = Modifier.fillMaxWidth(),
                             shape = RoundedCornerShape(8.dp),
                             colors = CardDefaults.cardColors(
-                                containerColor = if (isChecked) CyberCyan.copy(alpha = 0.08f) else MaterialTheme.colorScheme.surface
+                                containerColor = if (isRouted) CyberCyan.copy(alpha = 0.08f) else MaterialTheme.colorScheme.surface
                             )
                         ) {
                             Row(
@@ -241,19 +253,47 @@ fun SettingsScreen(
                                 horizontalArrangement = Arrangement.SpaceBetween
                             ) {
                                 Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        text = app.appName,
-                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
-                                    Text(
-                                        text = app.packageName,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis
-                                    )
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = app.appName,
+                                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Surface(
+                                            shape = RoundedCornerShape(4.dp),
+                                            color = if (isRouted) NeonGreen.copy(alpha = 0.15f) else CyberPurple.copy(alpha = 0.15f)
+                                        ) {
+                                            Text(
+                                                text = if (isRouted) "Config Tunnel" else "Direct ISP",
+                                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                                color = if (isRouted) NeonGreen else CyberPurple,
+                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                            )
+                                        }
+                                    }
+
+                                    Row(
+                                        verticalAlignment = Alignment.CenterVertically,
+                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                                    ) {
+                                        Text(
+                                            text = app.packageName,
+                                            style = MaterialTheme.typography.labelSmall,
+                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                            maxLines = 1,
+                                            overflow = TextOverflow.Ellipsis,
+                                            modifier = Modifier.weight(1f, fill = false)
+                                        )
+                                        if (stat != null && stat.totalBytes > 0) {
+                                            Text(
+                                                text = "• ${formatSettingsBytes(stat.totalBytes)}",
+                                                style = MaterialTheme.typography.labelSmall,
+                                                color = NeonGreen
+                                            )
+                                        }
+                                    }
                                 }
                                 Checkbox(
                                     checked = isChecked,
@@ -323,4 +363,14 @@ fun SplitOptionRow(
             color = if (selected) CyberCyan else MaterialTheme.colorScheme.onSurface
         )
     }
+}
+
+private fun formatSettingsBytes(bytes: Long): String {
+    if (bytes < 1024) return "$bytes B"
+    val kb = bytes / 1024.0
+    if (kb < 1024) return "%.1f KB".format(kb)
+    val mb = kb / 1024.0
+    if (mb < 1024) return "%.1f MB".format(mb)
+    val gb = mb / 1024.0
+    return "%.2f GB".format(gb)
 }

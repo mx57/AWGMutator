@@ -20,5 +20,9 @@ data class VpnStatus(
     val txBytes: Long = 0L,
     val connectedSince: Long? = null,
     val currentPingMs: Long? = null,
+    val isRootTunnel: Boolean = false,
+    val egressIp: String? = null,
+    val egressCountry: String? = null,
+    val isEgressVerified: Boolean = false,
     val errorMessage: String? = null
 )

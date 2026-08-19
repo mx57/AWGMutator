@@ -3,7 +3,6 @@ package com.example.vpn
 import android.content.Context
 import android.content.SharedPreferences
 import android.content.pm.ApplicationInfo
-import android.content.pm.PackageManager
 import android.graphics.drawable.Drawable
 
 data class InstalledApp(
@@ -53,23 +52,23 @@ class SplitTunnelManager(private val context: Context) {
 
     fun getInstalledApps(): List<InstalledApp> {
         val pm = context.packageManager
-        val packages = pm.getInstalledApplications(PackageManager.GET_META_DATA)
+        // Query basic info with 0 flags to prevent ashmem IPC allocations on Android Q+
+        val packages = pm.getInstalledApplications(0)
         val list = mutableListOf<InstalledApp>()
 
         for (appInfo in packages) {
             // Skip this app itself from listing
             if (appInfo.packageName == context.packageName) continue
 
-            val appName = pm.getApplicationLabel(appInfo).toString()
+            val appName = runCatching { pm.getApplicationLabel(appInfo).toString() }.getOrDefault(appInfo.packageName)
             val isSystem = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
-            val icon = runCatching { pm.getApplicationIcon(appInfo) }.getOrNull()
 
             list.add(
                 InstalledApp(
                     packageName = appInfo.packageName,
                     appName = appName,
                     isSystemApp = isSystem,
-                    icon = icon
+                    icon = null
                 )
             )
         }

@@ -122,6 +122,15 @@ fun AppNavigation() {
                             restoreState = true
                         }
                     },
+                    onNavigateToSettings = {
+                        navController.navigate(Screen.Settings.route) {
+                            popUpTo(navController.graph.findStartDestination().id) {
+                                saveState = true
+                            }
+                            launchSingleTop = true
+                            restoreState = true
+                        }
+                    },
                     snackbarHostState = snackbarHostState
                 )
             }

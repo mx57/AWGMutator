@@ -30,6 +30,8 @@ class SettingsViewModel(
     private val rootTunnelManager: com.example.vpn.RootTunnelManager = App.instance.rootTunnelManager
 ) : ViewModel() {
 
+    val appStats: StateFlow<List<com.example.domain.model.AppTrafficStat>> = App.instance.appTrafficTracker.appStats
+
     private val _uiState = MutableStateFlow(
         SettingsUiState(
             splitMode = splitManager.mode,
@@ -43,6 +45,9 @@ class SettingsViewModel(
     init {
         loadInstalledApps()
         checkRootAvailability()
+        viewModelScope.launch {
+            App.instance.appTrafficTracker.refreshOnce()
+        }
     }
 
     private fun checkRootAvailability() {

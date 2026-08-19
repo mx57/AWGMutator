@@ -5,8 +5,10 @@ import android.net.VpnService
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.App
+import com.example.domain.model.AppTrafficStat
 import com.example.domain.model.AwgConfig
 import com.example.domain.model.BlockedServicesCatalog
+import com.example.domain.model.NetworkEgressResult
 import com.example.domain.model.ServiceProbeResult
 import com.example.domain.model.VpnState
 import com.example.domain.model.VpnStatus
@@ -26,8 +28,10 @@ data class DashboardUiState(
     val isGeneratingWarp: Boolean = false,
     val isTestingSpeed: Boolean = false,
     val isTestingServices: Boolean = false,
+    val isVerifyingEgress: Boolean = false,
     val selectedConfig: AwgConfig? = null,
     val measuredPingMs: Long? = null,
+    val egressResult: NetworkEgressResult? = null,
     val serviceResults: List<ServiceProbeResult> = emptyList(),
     val userMessage: String? = null
 )
@@ -44,7 +48,14 @@ class DashboardViewModel(
     )
 ) : ViewModel() {
 
-    val vpnStatus: StateFlow<VpnStatus> = App.instance.tunnelManager.status
+    // Merge standard VPN and Root VPN statuses
+    val vpnStatus: StateFlow<VpnStatus> = if (App.instance.rootTunnelManager.isRootModeEnabled) {
+        App.instance.rootTunnelManager.status
+    } else {
+        App.instance.tunnelManager.status
+    }
+
+    val appStats: StateFlow<List<AppTrafficStat>> = App.instance.appTrafficTracker.appStats
 
     val configs: StateFlow<List<AwgConfig>> = configRepository.getAllConfigs()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
@@ -53,8 +64,11 @@ class DashboardViewModel(
     val uiState: StateFlow<DashboardUiState> = _uiState.asStateFlow()
 
     init {
-        // Initial service status check
+        // Initial service status check and app traffic refresh
         checkBlockedServices()
+        viewModelScope.launch {
+            App.instance.appTrafficTracker.refreshOnce()
+        }
     }
 
     fun selectConfig(config: AwgConfig) {
@@ -62,25 +76,65 @@ class DashboardViewModel(
     }
 
     fun toggleVpn(context: Context) {
+        val isRootMode = App.instance.rootTunnelManager.isRootModeEnabled
         val currentStatus = vpnStatus.value
+
         if (currentStatus.state == VpnState.CONNECTED || currentStatus.state == VpnState.CONNECTING) {
-            App.instance.tunnelManager.disconnect()
+            viewModelScope.launch {
+                if (isRootMode) {
+                    App.instance.rootTunnelManager.disconnect()
+                } else {
+                    App.instance.tunnelManager.disconnect()
+                }
+            }
         } else {
             val configToUse = _uiState.value.selectedConfig ?: configs.value.firstOrNull()
             if (configToUse != null) {
-                val prepareIntent = VpnService.prepare(context)
-                if (prepareIntent == null) {
-                    App.instance.tunnelManager.connect(configToUse)
-                    // Trigger service reachability check after connecting
-                    checkBlockedServices()
+                if (isRootMode) {
+                    viewModelScope.launch {
+                        val res = App.instance.rootTunnelManager.connect(configToUse)
+                        if (res.isFailure) {
+                            _uiState.value = _uiState.value.copy(
+                                userMessage = "Root connection error: ${res.exceptionOrNull()?.message}"
+                            )
+                        } else {
+                            verifyNetworkEgress()
+                            checkBlockedServices()
+                        }
+                    }
                 } else {
-                    _uiState.value = _uiState.value.copy(
-                        userMessage = "VPN permission required. Please grant permission."
-                    )
+                    val prepareIntent = VpnService.prepare(context)
+                    if (prepareIntent == null) {
+                        App.instance.tunnelManager.connect(configToUse)
+                        verifyNetworkEgress()
+                        checkBlockedServices()
+                    } else {
+                        _uiState.value = _uiState.value.copy(
+                            userMessage = "VPN permission required. Please grant permission."
+                        )
+                    }
                 }
             } else {
                 _uiState.value = _uiState.value.copy(
                     userMessage = "No config available. Generate WARP or create an AWG config first."
+                )
+            }
+        }
+    }
+
+    fun verifyNetworkEgress() {
+        viewModelScope.launch(Dispatchers.IO) {
+            _uiState.value = _uiState.value.copy(isVerifyingEgress = true)
+            val egress = App.instance.networkEgressVerifier.verifyEgress()
+            withContext(Dispatchers.Main) {
+                _uiState.value = _uiState.value.copy(
+                    isVerifyingEgress = false,
+                    egressResult = egress,
+                    userMessage = if (egress.isFunctional) {
+                        "Internet Exit Verified: IP ${egress.publicIp} [${egress.countryCode}] • Latency ${egress.latencyMs}ms"
+                    } else {
+                        "Exit Check: ${egress.errorMessage ?: "No internet access detected"}"
+                    }
                 )
             }
         }
@@ -173,3 +227,4 @@ class DashboardViewModel(
         _uiState.value = _uiState.value.copy(userMessage = null)
     }
 }
+

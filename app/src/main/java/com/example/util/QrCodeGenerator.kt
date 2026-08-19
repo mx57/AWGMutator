@@ -54,19 +54,21 @@ object QrCodeGenerator {
             }
         }
 
-        // Render to Bitmap
+        // Render to Bitmap via single createBitmap call with color array
         val darkColor = Color.argb(255, 11, 16, 30)
         val lightColor = Color.WHITE
+        val pixels = IntArray(size * size)
 
         for (y in 0 until size) {
+            val gridY = (y / cellSize).coerceIn(0, matrixDim - 1)
+            val rowOffset = y * size
             for (x in 0 until size) {
-                val gridY = (y / cellSize).coerceIn(0, matrixDim - 1)
                 val gridX = (x / cellSize).coerceIn(0, matrixDim - 1)
                 val isDark = matrix[gridY][gridX]
-                bitmap.setPixel(x, y, if (isDark) darkColor else lightColor)
+                pixels[rowOffset + x] = if (isDark) darkColor else lightColor
             }
         }
 
-        return bitmap
+        return Bitmap.createBitmap(pixels, size, size, Bitmap.Config.ARGB_8888)
     }
 }

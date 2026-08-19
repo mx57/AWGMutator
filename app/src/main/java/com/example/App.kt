@@ -40,6 +40,9 @@ class App : Application() {
     lateinit var pingTester: PingTester
         private set
 
+    lateinit var networkEgressVerifier: com.example.data.remote.NetworkEgressVerifier
+        private set
+
     lateinit var dpiNoiseManager: DpiNoiseManager
         private set
 
@@ -50,6 +53,9 @@ class App : Application() {
         private set
 
     lateinit var splitTunnelManager: SplitTunnelManager
+        private set
+
+    lateinit var appTrafficTracker: com.example.vpn.AppTrafficTracker
         private set
 
     lateinit var geneticAlgorithm: GeneticAlgorithm
@@ -73,8 +79,10 @@ class App : Application() {
 
         cloudflareApi = CloudflareApi()
         pingTester = PingTester()
+        networkEgressVerifier = com.example.data.remote.NetworkEgressVerifier()
         dpiNoiseManager = DpiNoiseManager()
         splitTunnelManager = SplitTunnelManager(applicationContext)
+        appTrafficTracker = com.example.vpn.AppTrafficTracker(applicationContext, splitTunnelManager)
         tunnelManager = TunnelManager(applicationContext)
         rootTunnelManager = com.example.vpn.RootTunnelManager(applicationContext)
         geneticAlgorithm = GeneticAlgorithm(
@@ -85,14 +93,10 @@ class App : Application() {
 
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
-        if (level >= ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) {
-            System.gc()
-        }
     }
 
     override fun onLowMemory() {
         super.onLowMemory()
-        System.gc()
     }
 
     private fun createNotificationChannels() {
