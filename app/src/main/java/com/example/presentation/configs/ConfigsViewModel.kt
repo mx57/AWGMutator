@@ -6,7 +6,12 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.App
 import com.example.domain.model.AwgConfig
+import com.example.domain.model.DnsCatalog
+import com.example.domain.model.EndpointCatalog
+import com.example.domain.model.EndpointItem
+import com.example.domain.model.SniCatalog
 import com.example.domain.repository.ConfigRepository
+import com.example.domain.usecase.EndpointScannerUseCase
 import com.example.domain.usecase.GenerateAwgConfigUseCase
 import com.example.domain.usecase.GenerateHybridWarpAwgUseCase
 import com.example.domain.usecase.GenerateWarpConfigUseCase
@@ -27,11 +32,19 @@ data class ConfigsUiState(
     val showAddDialog: Boolean = false,
     val showWarpDialog: Boolean = false,
     val showImportDialog: Boolean = false,
+    val showScannerDialog: Boolean = false,
+    val showDnsSelectionDialog: Boolean = false,
+    val showSniSelectionDialog: Boolean = false,
     val searchQuery: String = "",
     val activeQrConfig: AwgConfig? = null,
     val activeExportConfig: AwgConfig? = null,
     val testingConfigId: String? = null,
-    val userMessage: String? = null
+    val userMessage: String? = null,
+    val selectedCountry: String = "ALL",
+    val isScanningEndpoints: Boolean = false,
+    val discoveredEndpoints: List<EndpointItem> = emptyList(),
+    val selectedDnsList: List<String> = listOf("cu_uncensored", "cf_standard", "google"),
+    val selectedSniDomain: String = "vk.com"
 )
 
 class ConfigsViewModel(
@@ -44,7 +57,8 @@ class ConfigsViewModel(
     private val generateHybridUseCase: GenerateHybridWarpAwgUseCase = GenerateHybridWarpAwgUseCase(
         App.instance.cloudflareApi,
         App.instance.configRepository
-    )
+    ),
+    private val scannerUseCase: EndpointScannerUseCase = EndpointScannerUseCase(App.instance.pingTester)
 ) : ViewModel() {
 
     val configs: StateFlow<List<AwgConfig>> = configRepository.getAllConfigs()
@@ -52,6 +66,11 @@ class ConfigsViewModel(
 
     private val _uiState = MutableStateFlow(ConfigsUiState())
     val uiState: StateFlow<ConfigsUiState> = _uiState.asStateFlow()
+
+    init {
+        // Preload endpoints
+        _uiState.value = _uiState.value.copy(discoveredEndpoints = EndpointCatalog.preconfiguredEndpoints)
+    }
 
     fun setSearchQuery(query: String) {
         _uiState.value = _uiState.value.copy(searchQuery = query)
@@ -67,6 +86,76 @@ class ConfigsViewModel(
 
     fun showImportDialog(show: Boolean) {
         _uiState.value = _uiState.value.copy(showImportDialog = show)
+    }
+
+    fun showScannerDialog(show: Boolean) {
+        _uiState.value = _uiState.value.copy(showScannerDialog = show)
+    }
+
+    fun showDnsSelectionDialog(show: Boolean) {
+        _uiState.value = _uiState.value.copy(showDnsSelectionDialog = show)
+    }
+
+    fun showSniSelectionDialog(show: Boolean) {
+        _uiState.value = _uiState.value.copy(showSniSelectionDialog = show)
+    }
+
+    fun toggleDnsSelection(dnsId: String) {
+        val current = _uiState.value.selectedDnsList.toMutableList()
+        if (current.contains(dnsId)) {
+            if (current.size > 1) current.remove(dnsId)
+        } else {
+            current.add(dnsId)
+        }
+        _uiState.value = _uiState.value.copy(selectedDnsList = current)
+    }
+
+    fun selectSni(domain: String) {
+        _uiState.value = _uiState.value.copy(selectedSniDomain = domain, showSniSelectionDialog = false)
+    }
+
+    fun selectCountry(country: String) {
+        _uiState.value = _uiState.value.copy(selectedCountry = country)
+        scanCountryEndpoints(country)
+    }
+
+    fun scanCountryEndpoints(country: String = _uiState.value.selectedCountry) {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isScanningEndpoints = true)
+            val results = scannerUseCase.scanCountryEndpoints(country)
+            _uiState.value = _uiState.value.copy(
+                isScanningEndpoints = false,
+                discoveredEndpoints = results,
+                userMessage = "Scanned ${results.size} endpoints for $country"
+            )
+        }
+    }
+
+    fun discoverNewUnknownEndpoints() {
+        viewModelScope.launch {
+            _uiState.value = _uiState.value.copy(isScanningEndpoints = true)
+            val newCandidates = scannerUseCase.discoverNewEndpoints(count = 20, countryCode = _uiState.value.selectedCountry)
+            val combined = (newCandidates + _uiState.value.discoveredEndpoints).distinctBy { it.fullEndpoint }
+                .sortedWith(compareBy({ !it.isAlive }, { it.lastPingMs ?: 9999L }))
+            _uiState.value = _uiState.value.copy(
+                isScanningEndpoints = false,
+                discoveredEndpoints = combined,
+                userMessage = "Discovered ${newCandidates.count { it.isAlive }} live new endpoints!"
+            )
+        }
+    }
+
+    fun applyEndpointToConfig(config: AwgConfig, endpoint: String) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val updated = config.copy(endpoint = endpoint)
+            configRepository.saveConfig(updated)
+            withContext(Dispatchers.Main) {
+                _uiState.value = _uiState.value.copy(
+                    showScannerDialog = false,
+                    userMessage = "Updated ${config.name} endpoint to $endpoint"
+                )
+            }
+        }
     }
 
     fun showQrDialog(config: AwgConfig?) {
@@ -146,15 +235,17 @@ class ConfigsViewModel(
         h2: Long,
         h3: Long,
         h4: Long,
+        i1: String?,
+        sni: String?,
         mtu: Int
     ) {
         viewModelScope.launch(Dispatchers.IO) {
             _uiState.value = _uiState.value.copy(isGenerating = true)
             val result = generateAwgUseCase(
                 name = name.ifBlank { "Custom AWG" },
-                endpoint = endpoint.ifBlank { "192.168.1.1:51820" },
-                peerPublicKey = peerKey,
-                dns = dns.ifBlank { "1.1.1.1, 1.0.0.1" },
+                endpoint = endpoint.ifBlank { "162.159.192.13:1074" },
+                peerPublicKey = peerKey.ifBlank { "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=" },
+                dns = dns.ifBlank { "111.88.96.50, 111.88.96.51" },
                 preset = preset,
                 customJc = jc,
                 customJmin = jmin,
@@ -167,13 +258,15 @@ class ConfigsViewModel(
                 customH2 = h2,
                 customH3 = h3,
                 customH4 = h4,
+                customI1 = i1,
+                customSni = sni,
                 mtu = mtu
             )
             withContext(Dispatchers.Main) {
                 _uiState.value = _uiState.value.copy(
                     isGenerating = false,
                     showAddDialog = false,
-                    userMessage = if (result.isSuccess) "AmneziaWG config created!" else "Failed: ${result.exceptionOrNull()?.localizedMessage}"
+                    userMessage = if (result.isSuccess) "AmneziaWG Russian Bypass config created!" else "Failed: ${result.exceptionOrNull()?.localizedMessage}"
                 )
             }
         }
@@ -190,7 +283,7 @@ class ConfigsViewModel(
             _uiState.value = _uiState.value.copy(isGenerating = true)
             val result = if (injectAntiDpi) {
                 generateHybridUseCase(
-                    customName = name.ifBlank { "WARP + Anti-DPI Obfuscation" },
+                    customName = name.ifBlank { "WARP + Russian Anti-DPI Obfuscation" },
                     licenseKey = licenseKey,
                     dns = dnsPreset
                 )
@@ -207,7 +300,7 @@ class ConfigsViewModel(
                 _uiState.value = _uiState.value.copy(
                     isGenerating = false,
                     showWarpDialog = false,
-                    userMessage = if (result.isSuccess) "WARP profile registered with mirror auto-failover!" else "Note: ${result.exceptionOrNull()?.localizedMessage}"
+                    userMessage = if (result.isSuccess) "WARP profile generated successfully with auto-failover!" else "Note: ${result.exceptionOrNull()?.localizedMessage}"
                 )
             }
         }

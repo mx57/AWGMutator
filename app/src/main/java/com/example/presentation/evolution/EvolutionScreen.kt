@@ -1,7 +1,6 @@
 package com.example.presentation.evolution
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -22,13 +21,18 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.Check
+import androidx.compose.material.icons.filled.Dns
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Save
+import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Stop
+import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.Checkbox
+import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
@@ -38,7 +42,10 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
+import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -48,17 +55,15 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.Path
-import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.domain.model.EvolutionSettings
 import com.example.domain.model.Genome
 import com.example.ui.theme.CyberCyan
 import com.example.ui.theme.CyberPurple
@@ -91,50 +96,75 @@ fun EvolutionScreen(
             .padding(horizontal = 16.dp, vertical = 14.dp)
     ) {
         // Header
-        Text(
-            text = "🧬 Genetic Evolution",
-            style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
-            color = CyberCyan
-        )
-        Text(
-            text = "Optimizes AWG obfuscation headers & packet padding by live latency",
-            style = MaterialTheme.typography.bodySmall,
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Base Configuration Picker
-        Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .clip(RoundedCornerShape(12.dp)),
-            shape = RoundedCornerShape(12.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
         ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+            Column {
+                Text(
+                    text = "🧬 Genetic Evolution",
+                    style = MaterialTheme.typography.headlineMedium.copy(fontWeight = FontWeight.Bold),
+                    color = CyberCyan
+                )
+                Text(
+                    text = "Optimizes AWG obfuscation, SNI, and DNS by live latency",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+
+            OutlinedButton(
+                onClick = { viewModel.toggleSettingDialog(true) },
+                shape = RoundedCornerShape(10.dp),
+                border = BorderStroke(1.dp, CyberCyan)
             ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Base Template", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(
-                        text = baseConfig?.name ?: "No Config Selected",
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold)
-                    )
-                }
+                Icon(Icons.Default.Tune, contentDescription = "Gene Settings", tint = CyberCyan, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Genes", style = MaterialTheme.typography.labelSmall, color = CyberCyan)
+            }
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        // Target Configuration Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        ) {
+            Column(modifier = Modifier.padding(14.dp)) {
+                Text(
+                    text = "Base Seed Configuration",
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                    color = CyberPurple
+                )
+                Spacer(modifier = Modifier.height(6.dp))
 
                 Box {
-                    Button(
-                        onClick = { baseMenuExpanded = true },
-                        colors = ButtonDefaults.buttonColors(containerColor = CyberCyan),
-                        shape = RoundedCornerShape(8.dp)
+                    Surface(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp)),
+                        color = MaterialTheme.colorScheme.surfaceVariant,
+                        onClick = { baseMenuExpanded = true }
                     ) {
-                        Text("Select", color = MaterialTheme.colorScheme.onPrimary)
+                        Row(
+                            modifier = Modifier.padding(horizontal = 12.dp, vertical = 10.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                text = baseConfig?.name ?: "No configs found (Create one in Configs tab)",
+                                style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold)
+                            )
+                            Text(
+                                text = "Change ▾",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = CyberCyan
+                            )
+                        }
                     }
 
                     DropdownMenu(
@@ -157,51 +187,103 @@ fun EvolutionScreen(
 
         Spacer(modifier = Modifier.height(12.dp))
 
-        // Target Suite Selector
-        var targetMenuExpanded by remember { mutableStateOf(false) }
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(12.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
-        ) {
-            Row(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
-            ) {
-                Column(modifier = Modifier.weight(1f)) {
-                    Text("Optimization Target Suite", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    Text(
-                        text = screenState.targetProfile.label,
-                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold),
-                        color = CyberCyan
-                    )
-                }
+        // Realtime Latency Canvas
+        RealtimeLatencyCanvas(
+            progress = progress
+        )
 
-                Box {
-                    OutlinedButton(
-                        onClick = { targetMenuExpanded = true },
-                        shape = RoundedCornerShape(8.dp),
-                        border = BorderStroke(1.dp, CyberCyan)
+        Spacer(modifier = Modifier.height(14.dp))
+
+        // Controls
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            Button(
+                onClick = {
+                    if (progress.isRunning) {
+                        viewModel.stopEvolution()
+                    } else {
+                        viewModel.startEvolution()
+                    }
+                },
+                colors = ButtonDefaults.buttonColors(
+                    containerColor = if (progress.isRunning) DangerRed else CyberCyan
+                ),
+                shape = RoundedCornerShape(10.dp),
+                modifier = Modifier
+                    .weight(1f)
+                    .height(48.dp)
+                    .testTag("start_stop_evolution_button")
+            ) {
+                if (progress.isRunning) {
+                    Icon(Icons.Default.Stop, contentDescription = null)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Stop Evolution")
+                } else {
+                    Icon(Icons.Default.PlayArrow, contentDescription = null)
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text("Start Evolution")
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        // Progress Section
+        if (progress.isRunning || progress.currentGeneration > 0) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(1.dp, CyberCyan.copy(alpha = 0.4f))
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Text("Change", color = CyberCyan)
+                        Text(
+                            text = "Generation ${progress.currentGeneration} / ${progress.maxGenerations}",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            color = NeonGreen
+                        )
+                        Text(
+                            text = "Phase: ${progress.phase}",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = CyberCyan
+                        )
                     }
 
-                    DropdownMenu(
-                        expanded = targetMenuExpanded,
-                        onDismissRequest = { targetMenuExpanded = false }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    LinearProgressIndicator(
+                        progress = { (progress.currentGeneration.toFloat() / progress.maxGenerations.toFloat()).coerceIn(0f, 1f) },
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(6.dp)
+                            .clip(RoundedCornerShape(3.dp)),
+                        color = NeonGreen,
+                        trackColor = MaterialTheme.colorScheme.surfaceVariant
+                    )
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        EvolutionTargetProfile.values().forEach { profile ->
-                            DropdownMenuItem(
-                                text = { Text(profile.label) },
-                                onClick = {
-                                    viewModel.selectTargetProfile(profile)
-                                    targetMenuExpanded = false
-                                }
-                            )
+                        Column {
+                            Text("Best Fitness", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                            Text("${"%.2f".format(progress.bestFitness)}", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = CyberCyan)
+                        }
+                        Column {
+                            Text("Min Latency", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                            Text("${progress.bestPingMs} ms", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = NeonGreen)
+                        }
+                        Column {
+                            Text("Population", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.outline)
+                            Text("${progress.currentGenomeIndex}/${progress.populationSize}", style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold), color = MaterialTheme.colorScheme.onSurface)
                         }
                     }
                 }
@@ -210,198 +292,204 @@ fun EvolutionScreen(
 
         Spacer(modifier = Modifier.height(14.dp))
 
-        // Controls (Start / Stop)
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(10.dp)
-        ) {
-            if (!progress.isRunning) {
-                Button(
-                    onClick = { viewModel.startEvolution() },
-                    modifier = Modifier
-                        .weight(1f)
-                        .testTag("start_evolution_button"),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = CyberPurple)
-                ) {
-                    Icon(Icons.Default.PlayArrow, contentDescription = null)
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Start Evolution", fontWeight = FontWeight.Bold)
-                }
-            } else {
-                Button(
-                    onClick = { viewModel.stopEvolution() },
-                    modifier = Modifier
-                        .weight(1f)
-                        .testTag("stop_evolution_button"),
-                    shape = RoundedCornerShape(12.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = DangerRed)
-                ) {
-                    Icon(Icons.Default.Stop, contentDescription = null)
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text("Stop Evolution", fontWeight = FontWeight.Bold)
-                }
-            }
-        }
-
-        if (progress.isRunning) {
-            Spacer(modifier = Modifier.height(14.dp))
+        // Best Evolved Genome Card
+        progress.bestGenome?.let { best ->
             Card(
                 modifier = Modifier.fillMaxWidth(),
                 shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(1.dp, NeonGreen)
             ) {
-                Column(modifier = Modifier.padding(12.dp)) {
+                Column(modifier = Modifier.padding(14.dp)) {
                     Row(
                         modifier = Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.SpaceBetween,
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         Text(
-                            text = "Generation ${progress.currentGeneration}/${progress.maxGenerations} • Candidate #${progress.currentGenomeIndex}/${progress.populationSize}",
-                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                            color = CyberCyan
+                            text = "👑 Champion Genome (Gen ${best.generation})",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                            color = NeonGreen
                         )
-                        CircularProgressIndicator(modifier = Modifier.size(16.dp), color = CyberCyan, strokeWidth = 2.dp)
+                        Text(
+                            text = "${best.avgPingMs} ms",
+                            style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                            color = NeonGreen
+                        )
                     }
+
                     Spacer(modifier = Modifier.height(8.dp))
-                    val progressRatio = if (progress.maxGenerations > 0) {
-                        (progress.currentGeneration - 1 + (progress.currentGenomeIndex.toFloat() / progress.populationSize.toFloat())) / progress.maxGenerations.toFloat()
-                    } else 0f
-                    LinearProgressIndicator(
-                        progress = { progressRatio.coerceIn(0f, 1f) },
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .height(6.dp)
-                            .clip(RoundedCornerShape(3.dp)),
-                        color = CyberCyan,
-                        trackColor = MaterialTheme.colorScheme.surface
-                    )
-                }
-            }
-        }
 
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Realtime Latency & Reachability Canvas
-        RealtimeLatencyCanvas(
-            progress = progress,
-            modifier = Modifier.padding(bottom = 16.dp)
-        )
-
-        // Live Fitness Graph
-        Text(
-            text = "Fitness Convergence Curve",
-            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-            color = MaterialTheme.colorScheme.onBackground
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-
-        FitnessChart(
-            history = progress.generationHistory,
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(140.dp)
-        )
-
-        Spacer(modifier = Modifier.height(16.dp))
-
-        // Best Evolved Genome Card
-        progress.bestGenome?.let { best ->
-            BestGenomeCard(
-                genome = best,
-                onApply = { viewModel.applyEvolvedConfig(best) },
-                onSave = { viewModel.saveEvolvedConfig(best) }
-            )
-            Spacer(modifier = Modifier.height(16.dp))
-        }
-
-        // Live Mutation Logs
-        Text(
-            text = "Live Mutation & Evaluation Logs",
-            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-            color = MaterialTheme.colorScheme.onBackground
-        )
-        Spacer(modifier = Modifier.height(8.dp))
-
-        Surface(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(150.dp),
-            shape = RoundedCornerShape(10.dp),
-            color = MaterialTheme.colorScheme.surfaceVariant,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
-        ) {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(8.dp),
-                reverseLayout = false
-            ) {
-                items(progress.logs) { log ->
                     Text(
-                        text = log,
-                        style = MaterialTheme.typography.bodySmall.copy(
-                            fontFamily = FontFamily.Monospace,
-                            fontSize = 10.sp
-                        ),
-                        color = if (log.contains("Complete") || log.contains("Best")) NeonGreen else MaterialTheme.colorScheme.onSurfaceVariant
+                        text = "Jc=${best.jc} | Jmin=${best.jmin} Jmax=${best.jmax} | S1=${best.s1} S2=${best.s2} S3=${best.s3} S4=${best.s4}",
+                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                        color = MaterialTheme.colorScheme.onSurface
                     )
+                    Text(
+                        text = "H1=${best.h1} | H2=${best.h2} | H3=${best.h3} | H4=${best.h4} | MTU=${best.mtu}",
+                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                        color = CyberCyan
+                    )
+                    if (!best.sni.isNullOrBlank()) {
+                        Text(
+                            text = "SNI: ${best.sni}",
+                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                            color = CyberPurple
+                        )
+                    }
+                    if (!best.dns.isNullOrBlank()) {
+                        Text(
+                            text = "DNS: ${best.dns}",
+                            style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                            color = NeonGreen
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.height(12.dp))
+
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp)
+                    ) {
+                        Button(
+                            onClick = { viewModel.applyEvolvedConfig(best) },
+                            colors = ButtonDefaults.buttonColors(containerColor = NeonGreen),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.Check, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Apply & Connect", color = MaterialTheme.colorScheme.onPrimary)
+                        }
+
+                        Button(
+                            onClick = { viewModel.saveEvolvedConfig(best) },
+                            colors = ButtonDefaults.buttonColors(containerColor = CyberCyan),
+                            shape = RoundedCornerShape(8.dp),
+                            modifier = Modifier.weight(1f)
+                        ) {
+                            Icon(Icons.Default.Save, contentDescription = null, tint = MaterialTheme.colorScheme.onPrimary)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Save to List", color = MaterialTheme.colorScheme.onPrimary)
+                        }
+                    }
                 }
             }
         }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        // Logs Console
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(12.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
+        ) {
+            Column(modifier = Modifier.padding(12.dp)) {
+                Text(
+                    text = "Telemetry & Mutation Logs",
+                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                    color = CyberCyan
+                )
+                Spacer(modifier = Modifier.height(6.dp))
+
+                Box(modifier = Modifier.height(160.dp)) {
+                    LazyColumn(modifier = Modifier.fillMaxSize()) {
+                        items(progress.logs) { log ->
+                            Text(
+                                text = log,
+                                style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace),
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                modifier = Modifier.padding(vertical = 1.dp)
+                            )
+                        }
+                    }
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(60.dp))
+    }
+
+    // Evolution Settings Dialog
+    if (screenState.showSettingsDialog) {
+        EvolutionSettingsDialog(
+            settings = screenState.evolutionSettings,
+            onUpdate = { transform -> viewModel.updateEvolutionSettings(transform) },
+            onDismiss = { viewModel.toggleSettingDialog(false) }
+        )
     }
 }
 
 @Composable
-fun FitnessChart(
-    history: List<Pair<Int, Double>>,
-    modifier: Modifier = Modifier
+fun EvolutionSettingsDialog(
+    settings: EvolutionSettings,
+    onUpdate: ((EvolutionSettings) -> EvolutionSettings) -> Unit,
+    onDismiss: () -> Unit
 ) {
-    val chartPath = remember { Path() }
-
-    Surface(
-        modifier = modifier,
-        shape = RoundedCornerShape(12.dp),
-        color = MaterialTheme.colorScheme.surfaceVariant,
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
-    ) {
-        if (history.size < 2) {
-            Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            modifier = Modifier.fillMaxWidth().height(580.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(18.dp)
+                    .verticalScroll(rememberScrollState())
+            ) {
                 Text(
-                    text = "Awaiting generation data points...",
+                    text = "Evolution Parameters & Toggles",
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
+                )
+                Text(
+                    text = "Enable or disable individual genes participating in mutations",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
-            }
-        } else {
-            Canvas(modifier = Modifier.fillMaxSize().padding(16.dp)) {
-                val maxFitness = (history.maxOfOrNull { it.second } ?: 1.0).coerceAtLeast(1.0)
-                val minFitness = (history.minOfOrNull { it.second } ?: 0.0)
-                val range = (maxFitness - minFitness).coerceAtLeast(0.1)
 
-                val points = history.mapIndexed { idx, pair ->
-                    val x = (idx.toFloat() / (history.size - 1).toFloat()) * size.width
-                    val y = size.height - (((pair.second - minFitness) / range) * size.height).toFloat()
-                    Offset(x, y.coerceIn(0f, size.height))
+                Spacer(modifier = Modifier.height(12.dp))
+
+                GeneToggleRow("Mutate Junk Packet Count (Jc)", settings.mutateJc) {
+                    onUpdate { s -> s.copy(mutateJc = it) }
+                }
+                GeneToggleRow("Mutate Junk Packet Spread (Jmin / Jmax)", settings.mutateJminJmax) {
+                    onUpdate { s -> s.copy(mutateJminJmax = it) }
+                }
+                GeneToggleRow("Mutate Split Packets S1 / S2", settings.mutateS1S2) {
+                    onUpdate { s -> s.copy(mutateS1S2 = it) }
+                }
+                GeneToggleRow("Mutate Split Packets S3 / S4", settings.mutateS3S4) {
+                    onUpdate { s -> s.copy(mutateS3S4 = it) }
+                }
+                GeneToggleRow("Mutate Magic Headers (H1..H4)", settings.mutateHeadersH1H4) {
+                    onUpdate { s -> s.copy(mutateHeadersH1H4 = it) }
+                }
+                GeneToggleRow("Mutate Payload Noise (I1 Init)", settings.mutatePayloadNoiseI1) {
+                    onUpdate { s -> s.copy(mutatePayloadNoiseI1 = it) }
+                }
+                GeneToggleRow("Mutate Russian Whitelist SNI", settings.mutateSni) {
+                    onUpdate { s -> s.copy(mutateSni = it) }
+                }
+                GeneToggleRow("Mutate DNS Resolvers", settings.mutateDns) {
+                    onUpdate { s -> s.copy(mutateDns = it) }
+                }
+                GeneToggleRow("Mutate Endpoints (IP:Port)", settings.mutateEndpoints) {
+                    onUpdate { s -> s.copy(mutateEndpoints = it) }
+                }
+                GeneToggleRow("Mutate MTU Range (1280-1420)", settings.mutateMtu) {
+                    onUpdate { s -> s.copy(mutateMtu = it) }
                 }
 
-                chartPath.reset()
-                chartPath.moveTo(points.first().x, points.first().y)
-                for (i in 1 until points.size) {
-                    chartPath.lineTo(points[i].x, points[i].y)
-                }
+                Spacer(modifier = Modifier.height(16.dp))
 
-                drawPath(
-                    path = chartPath,
-                    color = CyberCyan,
-                    style = Stroke(width = 3.dp.toPx())
-                )
-
-                // Draw dots
-                for (pt in points) {
-                    drawCircle(color = CyberPurple, radius = 4.dp.toPx(), center = pt)
-                    drawCircle(color = Color.White, radius = 2.dp.toPx(), center = pt)
+                Button(
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = CyberCyan)
+                ) {
+                    Text("Save & Close")
                 }
             }
         }
@@ -409,79 +497,23 @@ fun FitnessChart(
 }
 
 @Composable
-fun BestGenomeCard(
-    genome: Genome,
-    onApply: () -> Unit,
-    onSave: () -> Unit
-) {
-    Card(
-        modifier = Modifier.fillMaxWidth().testTag("best_genome_card"),
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-        border = BorderStroke(1.5.dp, NeonGreen)
+fun GeneToggleRow(label: String, isChecked: Boolean, onCheckedChange: (Boolean) -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(vertical = 4.dp),
+        horizontalArrangement = Arrangement.SpaceBetween,
+        verticalAlignment = Alignment.CenterVertically
     ) {
-        Column(modifier = Modifier.padding(14.dp)) {
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.SpaceBetween,
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = NeonGreen)
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = "Best Evolved Genome",
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                        color = NeonGreen
-                    )
-                }
-                Text(
-                    text = "Fitness: ${"%.2f".format(genome.fitness)}",
-                    style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace),
-                    color = NeonGreen
-                )
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            Text(
-                text = "Ping: ${genome.avgPingMs} ms • Jc: ${genome.jc} • Jmin/max: ${genome.jmin}/${genome.jmax} • MTU: ${genome.mtu}",
-                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace)
-            )
-            Text(
-                text = "Prefixes: S1=${genome.s1}, S2=${genome.s2}, S3=${genome.s3}, S4=${genome.s4}",
-                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace)
-            )
-            Text(
-                text = "Headers: H1=${genome.h1}, H2=${genome.h2}, H3=${genome.h3}, H4=${genome.h4}",
-                style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace)
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Button(
-                    onClick = onApply,
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(8.dp),
-                    colors = ButtonDefaults.buttonColors(containerColor = NeonGreen)
-                ) {
-                    Icon(Icons.Default.Check, contentDescription = null, tint = Color.Black)
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Apply to VPN", color = Color.Black, fontWeight = FontWeight.Bold)
-                }
-
-                OutlinedButton(
-                    onClick = onSave,
-                    modifier = Modifier.weight(1f),
-                    shape = RoundedCornerShape(8.dp),
-                    border = BorderStroke(1.dp, CyberCyan)
-                ) {
-                    Icon(Icons.Default.Save, contentDescription = null, tint = CyberCyan)
-                    Spacer(modifier = Modifier.width(4.dp))
-                    Text("Save Config", color = CyberCyan)
-                }
-            }
-        }
+        Text(
+            text = label,
+            style = MaterialTheme.typography.bodyMedium,
+            modifier = Modifier.weight(1f)
+        )
+        Switch(
+            checked = isChecked,
+            onCheckedChange = onCheckedChange,
+            colors = SwitchDefaults.colors(checkedThumbColor = CyberCyan)
+        )
     }
 }

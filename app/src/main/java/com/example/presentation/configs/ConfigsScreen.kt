@@ -25,13 +25,18 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.CloudDownload
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Difference
+import androidx.compose.material.icons.filled.Dns
+import androidx.compose.material.icons.filled.Explore
 import androidx.compose.material.icons.filled.FileUpload
+import androidx.compose.material.icons.filled.Language
 import androidx.compose.material.icons.filled.NetworkCheck
 import androidx.compose.material.icons.filled.QrCode
+import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Share
@@ -45,11 +50,15 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Checkbox
 import androidx.compose.material3.CheckboxDefaults
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.FilterChip
+import androidx.compose.material3.FilterChipDefaults
 import androidx.compose.material3.FloatingActionButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedTextField
+import androidx.compose.material3.RadioButton
+import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
@@ -80,6 +89,9 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.domain.model.AwgConfig
 import com.example.domain.model.DnsCatalog
+import com.example.domain.model.EndpointCatalog
+import com.example.domain.model.EndpointItem
+import com.example.domain.model.SniCatalog
 import com.example.domain.usecase.ObfuscationPreset
 import com.example.ui.theme.CyberCyan
 import com.example.ui.theme.CyberPurple
@@ -179,6 +191,39 @@ fun ConfigsScreen(
                 }
             }
 
+            // Quick Tools Bar: Endpoints, DNS, SNI
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState())
+                    .padding(bottom = 8.dp),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                FilterChip(
+                    selected = false,
+                    onClick = { viewModel.showScannerDialog(true) },
+                    label = { Text("🌐 Endpoints & Discovery", style = MaterialTheme.typography.labelSmall) },
+                    leadingIcon = { Icon(Icons.Default.Explore, contentDescription = null, modifier = Modifier.size(14.dp), tint = CyberCyan) },
+                    colors = FilterChipDefaults.filterChipColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                )
+
+                FilterChip(
+                    selected = false,
+                    onClick = { viewModel.showDnsSelectionDialog(true) },
+                    label = { Text("🛡️ DNS (${uiState.selectedDnsList.size} selected)", style = MaterialTheme.typography.labelSmall) },
+                    leadingIcon = { Icon(Icons.Default.Dns, contentDescription = null, modifier = Modifier.size(14.dp), tint = NeonGreen) },
+                    colors = FilterChipDefaults.filterChipColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                )
+
+                FilterChip(
+                    selected = false,
+                    onClick = { viewModel.showSniSelectionDialog(true) },
+                    label = { Text("🎭 SNI (${uiState.selectedSniDomain})", style = MaterialTheme.typography.labelSmall) },
+                    leadingIcon = { Icon(Icons.Default.Language, contentDescription = null, modifier = Modifier.size(14.dp), tint = CyberPurple) },
+                    colors = FilterChipDefaults.filterChipColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                )
+            }
+
             // Search Bar
             OutlinedTextField(
                 value = uiState.searchQuery,
@@ -202,22 +247,21 @@ fun ConfigsScreen(
                 ) {
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Icon(
-                            imageVector = Icons.Default.Tune,
+                            Icons.Default.Security,
                             contentDescription = null,
-                            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                            modifier = Modifier.size(64.dp)
+                            tint = MaterialTheme.colorScheme.outline,
+                            modifier = Modifier.size(56.dp)
                         )
-                        Spacer(modifier = Modifier.height(12.dp))
+                        Spacer(modifier = Modifier.height(8.dp))
                         Text(
                             text = "No configurations found",
                             style = MaterialTheme.typography.titleMedium,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
-                        Spacer(modifier = Modifier.height(4.dp))
                         Text(
-                            text = "Tap 'New WARP' or + to add an AmneziaWG profile",
+                            text = "Import a .conf or generate a new profile to begin",
                             style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f)
+                            color = MaterialTheme.colorScheme.outline
                         )
                     }
                 }
@@ -227,15 +271,15 @@ fun ConfigsScreen(
                     verticalArrangement = Arrangement.spacedBy(10.dp)
                 ) {
                     items(filteredConfigs, key = { it.id }) { config ->
-                        ConfigItemCard(
+                        ConfigCard(
                             config = config,
                             isTesting = uiState.testingConfigId == config.id,
-                            onTestPing = { viewModel.testConfigEndpoint(config) },
+                            onTest = { viewModel.testConfigEndpoint(config) },
                             onDelete = { viewModel.deleteConfig(config.id) },
                             onDuplicate = { viewModel.duplicateConfig(config) },
+                            onShare = { viewModel.shareConfigFile(context, config) },
                             onShowQr = { viewModel.showQrDialog(config) },
-                            onExport = { viewModel.showExportDialog(config) },
-                            onShare = { viewModel.shareConfigFile(context, config) }
+                            onShowExport = { viewModel.showExportDialog(config) }
                         )
                     }
                     item {
@@ -247,20 +291,24 @@ fun ConfigsScreen(
     }
 
     // Dialogs
-    if (uiState.showWarpDialog) {
-        AdvancedWarpDialog(
-            onDismiss = { viewModel.showWarpDialog(false) },
-            onGenerate = { name, license, dns, endpoint, antiDpi ->
-                viewModel.generateAdvancedWarp(name, license, dns, endpoint, antiDpi)
+    if (uiState.showAddDialog) {
+        AddAwgConfigDialog(
+            defaultDns = DnsCatalog.formatMultiple(uiState.selectedDnsList),
+            defaultSni = uiState.selectedSniDomain,
+            onDismiss = { viewModel.showAddDialog(false) },
+            onCreate = { name, ep, peer, dns, preset, jc, jmin, jmax, s1, s2, s3, s4, h1, h2, h3, h4, i1, sni, mtu ->
+                viewModel.createCustomAwg(name, ep, peer, dns, preset, jc, jmin, jmax, s1, s2, s3, s4, h1, h2, h3, h4, i1, sni, mtu)
             }
         )
     }
 
-    if (uiState.showAddDialog) {
-        AddAwgConfigDialog(
-            onDismiss = { viewModel.showAddDialog(false) },
-            onCreate = { name, endpoint, peerKey, dns, preset, jc, jmin, jmax, s1, s2, s3, s4, h1, h2, h3, h4, mtu ->
-                viewModel.createCustomAwg(name, endpoint, peerKey, dns, preset, jc, jmin, jmax, s1, s2, s3, s4, h1, h2, h3, h4, mtu)
+    if (uiState.showWarpDialog) {
+        GenerateWarpDialog(
+            isGenerating = uiState.isGenerating,
+            defaultDns = DnsCatalog.formatMultiple(uiState.selectedDnsList),
+            onDismiss = { viewModel.showWarpDialog(false) },
+            onGenerate = { name, license, dns, ep, antiDpi ->
+                viewModel.generateAdvancedWarp(name, license, dns, ep, antiDpi)
             }
         )
     }
@@ -268,92 +316,278 @@ fun ConfigsScreen(
     if (uiState.showImportDialog) {
         ImportConfigDialog(
             onDismiss = { viewModel.showImportDialog(false) },
-            onImport = { text, name -> viewModel.importConfig(text, name) }
+            onImport = { raw, name -> viewModel.importConfig(raw, name) }
+        )
+    }
+
+    if (uiState.showScannerDialog) {
+        EndpointScannerDialog(
+            endpoints = uiState.discoveredEndpoints,
+            selectedCountry = uiState.selectedCountry,
+            isScanning = uiState.isScanningEndpoints,
+            configs = configs,
+            onSelectCountry = { viewModel.selectCountry(it) },
+            onRefresh = { viewModel.scanCountryEndpoints() },
+            onDiscoverNew = { viewModel.discoverNewUnknownEndpoints() },
+            onApplyToConfig = { config, ep -> viewModel.applyEndpointToConfig(config, ep) },
+            onDismiss = { viewModel.showScannerDialog(false) }
+        )
+    }
+
+    if (uiState.showDnsSelectionDialog) {
+        DnsSelectionDialog(
+            selectedIds = uiState.selectedDnsList,
+            onToggle = { viewModel.toggleDnsSelection(it) },
+            onDismiss = { viewModel.showDnsSelectionDialog(false) }
+        )
+    }
+
+    if (uiState.showSniSelectionDialog) {
+        SniSelectionDialog(
+            selectedSni = uiState.selectedSniDomain,
+            onSelect = { viewModel.selectSni(it) },
+            onDismiss = { viewModel.showSniSelectionDialog(false) }
         )
     }
 
     uiState.activeQrConfig?.let { config ->
-        QrCodeViewerDialog(
-            config = config,
-            onDismiss = { viewModel.showQrDialog(null) }
-        )
+        QrCodeDialog(config = config, onDismiss = { viewModel.showQrDialog(null) })
     }
 
     uiState.activeExportConfig?.let { config ->
-        ExportConfigDialog(
-            config = config,
-            onDismiss = { viewModel.showExportDialog(null) }
-        )
+        ExportConfigDialog(config = config, onDismiss = { viewModel.showExportDialog(null) })
     }
 }
 
 @Composable
-fun ConfigItemCard(
+fun ConfigCard(
     config: AwgConfig,
-    isTesting: Boolean = false,
-    onTestPing: () -> Unit,
+    isTesting: Boolean,
+    onTest: () -> Unit,
     onDelete: () -> Unit,
     onDuplicate: () -> Unit,
+    onShare: () -> Unit,
     onShowQr: () -> Unit,
-    onExport: () -> Unit,
-    onShare: () -> Unit
+    onShowExport: () -> Unit
 ) {
     Card(
         modifier = Modifier
             .fillMaxWidth()
-            .testTag("config_item_${config.id}"),
-        shape = RoundedCornerShape(14.dp),
-        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+            .testTag("config_card_${config.id}"),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outlineVariant)
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
             Row(
                 modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.SpaceBetween
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
             ) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    modifier = Modifier.weight(1f)
-                ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = config.name,
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onSurface,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Text(
+                        text = config.endpoint,
+                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                        color = CyberCyan
+                    )
+                }
+
+                // Latency Badge
+                if (config.lastPingMs != null) {
                     Surface(
-                        shape = RoundedCornerShape(8.dp),
-                        color = if (config.isWarp) CyberPurple.copy(alpha = 0.2f) else CyberCyan.copy(alpha = 0.2f)
+                        color = NeonGreen.copy(alpha = 0.15f),
+                        shape = RoundedCornerShape(6.dp),
+                        modifier = Modifier.padding(start = 6.dp)
                     ) {
-                        Icon(
-                            imageVector = if (config.isWarp) Icons.Default.Security else Icons.Default.Tune,
-                            contentDescription = null,
-                            tint = if (config.isWarp) CyberPurple else CyberCyan,
-                            modifier = Modifier.padding(6.dp).size(20.dp)
+                        Text(
+                            text = "${config.lastPingMs} ms",
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                            color = NeonGreen,
+                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
                         )
                     }
-                    Spacer(modifier = Modifier.width(10.dp))
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Anti-DPI Genes Preview
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                ParamBadge(label = "Jc", value = "${config.jc}")
+                ParamBadge(label = "Jitter", value = "${config.jmin}-${config.jmax}")
+                ParamBadge(label = "S1", value = "${config.s1}")
+                ParamBadge(label = "H1", value = "${config.h1}")
+                if (!config.sni.isNullOrBlank()) {
+                    ParamBadge(label = "SNI", value = config.sni)
+                }
+                if (!config.i1.isNullOrBlank()) {
+                    ParamBadge(label = "I1", value = "Noise")
+                }
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // Action Row
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Button(
+                    onClick = onTest,
+                    enabled = !isTesting,
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.testTag("test_endpoint_button_${config.id}")
+                ) {
+                    if (isTesting) {
+                        CircularProgressIndicator(modifier = Modifier.size(14.dp), color = CyberCyan)
+                    } else {
+                        Icon(Icons.Default.Speed, contentDescription = null, modifier = Modifier.size(16.dp), tint = CyberCyan)
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Test Ping", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface)
+                    }
+                }
+
+                Row(horizontalArrangement = Arrangement.spacedBy(4.dp)) {
+                    IconButton(onClick = onShowQr, modifier = Modifier.testTag("qr_button_${config.id}")) {
+                        Icon(Icons.Default.QrCode, contentDescription = "QR Code", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    IconButton(onClick = onShowExport, modifier = Modifier.testTag("export_button_${config.id}")) {
+                        Icon(Icons.Default.Difference, contentDescription = "View Conf", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    IconButton(onClick = onShare, modifier = Modifier.testTag("share_button_${config.id}")) {
+                        Icon(Icons.Default.Share, contentDescription = "Share", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    IconButton(onClick = onDuplicate, modifier = Modifier.testTag("duplicate_button_${config.id}")) {
+                        Icon(Icons.Default.ContentCopy, contentDescription = "Duplicate", tint = MaterialTheme.colorScheme.onSurfaceVariant)
+                    }
+                    IconButton(onClick = onDelete, modifier = Modifier.testTag("delete_button_${config.id}")) {
+                        Icon(Icons.Default.Delete, contentDescription = "Delete", tint = DangerRed)
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun ParamBadge(label: String, value: String) {
+    Surface(
+        color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+        shape = RoundedCornerShape(4.dp)
+    ) {
+        Row(modifier = Modifier.padding(horizontal = 5.dp, vertical = 2.dp)) {
+            Text(
+                text = "$label: ",
+                style = MaterialTheme.typography.labelSmall,
+                color = MaterialTheme.colorScheme.outline
+            )
+            Text(
+                text = value,
+                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis
+            )
+        }
+    }
+}
+
+@Composable
+fun DnsSelectionDialog(
+    selectedIds: List<String>,
+    onToggle: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            modifier = Modifier.fillMaxWidth().height(520.dp)
+        ) {
+            Column(modifier = Modifier.padding(18.dp).fillMaxSize()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
                     Column {
                         Text(
-                            text = config.name,
-                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
+                            text = "Censorship-Resistant DNS",
+                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
                         )
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Text(
-                                text = "${config.endpoint} • DNS ${config.dns}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                modifier = Modifier.weight(1f, fill = false)
-                            )
-                            if ((config.lastPingMs ?: 0L) > 0) {
+                        Text(
+                            text = "${selectedIds.size} servers selected for generation & evolution",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = NeonGreen
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    items(DnsCatalog.servers, key = { it.id }) { server ->
+                        val isSelected = selectedIds.contains(server.id)
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onToggle(server.id) },
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (isSelected) CyberCyan.copy(alpha = 0.12f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                            border = BorderStroke(1.dp, if (isSelected) CyberCyan else MaterialTheme.colorScheme.outlineVariant)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Checkbox(
+                                    checked = isSelected,
+                                    onCheckedChange = { onToggle(server.id) },
+                                    colors = CheckboxDefaults.colors(checkedColor = CyberCyan)
+                                )
                                 Spacer(modifier = Modifier.width(6.dp))
-                                Surface(
-                                    shape = RoundedCornerShape(4.dp),
-                                    color = NeonGreen.copy(alpha = 0.15f)
-                                ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = server.name,
+                                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold)
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Surface(
+                                            color = MaterialTheme.colorScheme.outline.copy(alpha = 0.2f),
+                                            shape = RoundedCornerShape(4.dp)
+                                        ) {
+                                            Text(
+                                                text = server.country,
+                                                style = MaterialTheme.typography.labelSmall,
+                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                            )
+                                        }
+                                    }
                                     Text(
-                                        text = "${config.lastPingMs}ms",
-                                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, color = NeonGreen),
-                                        modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                        text = server.formatted,
+                                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                                        color = CyberCyan
+                                    )
+                                    Text(
+                                        text = server.description,
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
                                     )
                                 }
                             }
@@ -361,195 +595,281 @@ fun ConfigItemCard(
                     }
                 }
 
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    IconButton(onClick = onTestPing) {
-                        if (isTesting) {
-                            CircularProgressIndicator(modifier = Modifier.size(16.dp), color = CyberCyan)
-                        } else {
-                            Icon(Icons.Default.Speed, contentDescription = "Test Ping", tint = CyberCyan, modifier = Modifier.size(20.dp))
-                        }
-                    }
-                    IconButton(onClick = onDuplicate) {
-                        Icon(Icons.Default.Difference, contentDescription = "Duplicate", tint = CyberCyan, modifier = Modifier.size(20.dp))
-                    }
-                    IconButton(onClick = onShowQr) {
-                        Icon(Icons.Default.QrCode, contentDescription = "QR Code", tint = CyberCyan, modifier = Modifier.size(20.dp))
-                    }
-                    IconButton(onClick = onShare) {
-                        Icon(Icons.Default.Share, contentDescription = "Share", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(20.dp))
-                    }
-                    IconButton(onClick = onDelete) {
-                        Icon(Icons.Default.Delete, contentDescription = "Delete", tint = DangerRed, modifier = Modifier.size(20.dp))
-                    }
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Button(
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = CyberCyan)
+                ) {
+                    Text("Apply Selection (${selectedIds.size})")
                 }
-            }
-
-            Spacer(modifier = Modifier.height(8.dp))
-
-            // Parameter Badges
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp)
-            ) {
-                ParamChip("Jc: ${config.jc}")
-                ParamChip("Jmin/max: ${config.jmin}-${config.jmax}")
-                ParamChip("S1..S4: ${config.s1},${config.s2},${config.s3},${config.s4}")
-                ParamChip("MTU: ${config.mtu}")
             }
         }
     }
 }
 
 @Composable
-fun ParamChip(label: String) {
-    Surface(
-        shape = RoundedCornerShape(6.dp),
-        color = MaterialTheme.colorScheme.surface,
-        border = BorderStroke(0.5.dp, MaterialTheme.colorScheme.outline)
-    ) {
-        Text(
-            text = label,
-            style = MaterialTheme.typography.labelSmall.copy(fontFamily = FontFamily.Monospace, fontSize = 10.sp),
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-            color = MaterialTheme.colorScheme.onSurfaceVariant
-        )
-    }
-}
-
-@Composable
-fun AdvancedWarpDialog(
-    onDismiss: () -> Unit,
-    onGenerate: (name: String, license: String?, dns: String, endpoint: String, antiDpi: Boolean) -> Unit
+fun SniSelectionDialog(
+    selectedSni: String,
+    onSelect: (String) -> Unit,
+    onDismiss: () -> Unit
 ) {
-    var name by remember { mutableStateOf("Cloudflare WARP Ultra") }
-    var licenseKey by remember { mutableStateOf("") }
-    var dnsChoice by remember { mutableStateOf("1.1.1.1, 1.0.0.1") }
-    var endpointChoice by remember { mutableStateOf("162.159.193.1:2408") }
-    var injectAntiDpi by remember { mutableStateOf(true) }
-
     Dialog(onDismissRequest = onDismiss) {
-        Surface(
+        Card(
             shape = RoundedCornerShape(16.dp),
-            color = MaterialTheme.colorScheme.surface,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-            modifier = Modifier.fillMaxWidth().padding(vertical = 20.dp)
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            modifier = Modifier.fillMaxWidth().height(480.dp)
         ) {
-            Column(
-                modifier = Modifier
-                    .padding(20.dp)
-                    .verticalScroll(rememberScrollState())
-            ) {
+            Column(modifier = Modifier.padding(18.dp).fillMaxSize()) {
                 Text(
-                    text = "Generate Cloudflare WARP",
-                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                    color = CyberPurple
+                    text = "SNI Spoofing Whitelist",
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
                 )
                 Text(
-                    text = "Automatic mirror failover enabled across 12+ Cloudflare gateways",
+                    text = "Disguises WireGuard/AWG handshakes under allowed Russian domains",
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
+                Spacer(modifier = Modifier.height(10.dp))
+
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    items(SniCatalog.russianWhitelistDomains, key = { it.id }) { item ->
+                        val isSelected = selectedSni == item.domain
+                        Surface(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .clickable { onSelect(item.domain) },
+                            shape = RoundedCornerShape(8.dp),
+                            color = if (isSelected) CyberPurple.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f),
+                            border = BorderStroke(1.dp, if (isSelected) CyberPurple else MaterialTheme.colorScheme.outlineVariant)
+                        ) {
+                            Row(
+                                modifier = Modifier.padding(10.dp),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                RadioButton(
+                                    selected = isSelected,
+                                    onClick = { onSelect(item.domain) },
+                                    colors = RadioButtonDefaults.colors(selectedColor = CyberPurple)
+                                )
+                                Spacer(modifier = Modifier.width(6.dp))
+                                Column {
+                                    Text(
+                                        text = item.domain,
+                                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace)
+                                    )
+                                    Text(
+                                        text = "${item.serviceName} (${item.category})",
+                                        style = MaterialTheme.typography.bodySmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+                            }
+                        }
+                    }
+                }
+
                 Spacer(modifier = Modifier.height(12.dp))
 
-                OutlinedTextField(
-                    value = name,
-                    onValueChange = { name = it },
-                    label = { Text("Profile Name") },
-                    modifier = Modifier.fillMaxWidth()
-                )
+                Button(
+                    onClick = onDismiss,
+                    modifier = Modifier.fillMaxWidth(),
+                    colors = ButtonDefaults.buttonColors(containerColor = CyberPurple)
+                ) {
+                    Text("Done")
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun EndpointScannerDialog(
+    endpoints: List<EndpointItem>,
+    selectedCountry: String,
+    isScanning: Boolean,
+    configs: List<AwgConfig>,
+    onSelectCountry: (String) -> Unit,
+    onRefresh: () -> Unit,
+    onDiscoverNew: () -> Unit,
+    onApplyToConfig: (AwgConfig, String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    var selectedTargetConfig by remember { mutableStateOf(configs.firstOrNull()) }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            modifier = Modifier.fillMaxWidth().height(620.dp)
+        ) {
+            Column(modifier = Modifier.padding(16.dp).fillMaxSize()) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.SpaceBetween,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    Column {
+                        Text(
+                            text = "Endpoint Discovery & Ping",
+                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
+                        )
+                        Text(
+                            text = "Find unblocked high-speed WireGuard / WARP endpoints",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
 
                 Spacer(modifier = Modifier.height(8.dp))
 
-                OutlinedTextField(
-                    value = licenseKey,
-                    onValueChange = { licenseKey = it },
-                    label = { Text("WARP+ License Key (Optional)") },
-                    placeholder = { Text("e.g. 26-char key for unlimited quota") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                OutlinedTextField(
-                    value = endpointChoice,
-                    onValueChange = { endpointChoice = it },
-                    label = { Text("WARP Endpoint (IP:Port)") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Spacer(modifier = Modifier.height(8.dp))
-
-                OutlinedTextField(
-                    value = dnsChoice,
-                    onValueChange = { dnsChoice = it },
-                    label = { Text("DNS Resolver") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Spacer(modifier = Modifier.height(6.dp))
-
-                // DNS Preset Chips
-                Text("Select DNS Server Preset (18 Available):", style = MaterialTheme.typography.labelSmall, color = CyberCyan)
-                Spacer(modifier = Modifier.height(4.dp))
+                // Country Selector
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    DnsCatalog.servers.forEach { server ->
-                        val isSelected = dnsChoice == server.formatted
+                    EndpointCatalog.countries.forEach { (code, label) ->
+                        FilterChip(
+                            selected = selectedCountry == code,
+                            onClick = { onSelectCountry(code) },
+                            label = { Text(label, style = MaterialTheme.typography.labelSmall) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = CyberCyan,
+                                selectedLabelColor = MaterialTheme.colorScheme.onPrimary
+                            )
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                // Action Buttons
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Button(
+                        onClick = onRefresh,
+                        enabled = !isScanning,
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
+                    ) {
+                        if (isScanning) {
+                            CircularProgressIndicator(modifier = Modifier.size(14.dp), color = CyberCyan)
+                        } else {
+                            Icon(Icons.Default.Refresh, contentDescription = null, modifier = Modifier.size(16.dp), tint = CyberCyan)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("Scan Known", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurface)
+                        }
+                    }
+
+                    Button(
+                        onClick = onDiscoverNew,
+                        enabled = !isScanning,
+                        modifier = Modifier.weight(1f),
+                        colors = ButtonDefaults.buttonColors(containerColor = CyberPurple)
+                    ) {
+                        Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Discover New 🔍", style = MaterialTheme.typography.labelSmall)
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(10.dp))
+
+                // Endpoints List
+                LazyColumn(
+                    modifier = Modifier.weight(1f),
+                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    items(endpoints, key = { it.fullEndpoint }) { item ->
                         Surface(
                             shape = RoundedCornerShape(8.dp),
-                            color = if (isSelected) CyberCyan.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant,
-                            border = BorderStroke(1.dp, if (isSelected) CyberCyan else MaterialTheme.colorScheme.outline),
-                            modifier = Modifier.clickable { dnsChoice = server.formatted }
+                            color = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
+                            border = BorderStroke(1.dp, if (item.isAlive) NeonGreen.copy(alpha = 0.4f) else MaterialTheme.colorScheme.outlineVariant)
                         ) {
-                            Text(
-                                text = server.name,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = if (isSelected) CyberCyan else MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
-                            )
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .padding(10.dp),
+                                horizontalArrangement = Arrangement.SpaceBetween,
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
+                                Column(modifier = Modifier.weight(1f)) {
+                                    Row(verticalAlignment = Alignment.CenterVertically) {
+                                        Text(
+                                            text = item.fullEndpoint,
+                                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold, fontFamily = FontFamily.Monospace),
+                                            color = CyberCyan
+                                        )
+                                        Spacer(modifier = Modifier.width(6.dp))
+                                        Surface(
+                                            color = CyberPurple.copy(alpha = 0.2f),
+                                            shape = RoundedCornerShape(4.dp)
+                                        ) {
+                                            Text(
+                                                text = item.countryCode,
+                                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                                color = CyberPurple,
+                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                                            )
+                                        }
+                                    }
+                                    Text(
+                                        text = "${item.countryName} (${item.ispName})",
+                                        style = MaterialTheme.typography.labelSmall,
+                                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                                    )
+                                }
+
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    if (item.lastPingMs != null) {
+                                        Surface(
+                                            color = if (item.isAlive) NeonGreen.copy(alpha = 0.2f) else DangerRed.copy(alpha = 0.2f),
+                                            shape = RoundedCornerShape(6.dp)
+                                        ) {
+                                            Text(
+                                                text = "${item.lastPingMs} ms",
+                                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                                color = if (item.isAlive) NeonGreen else DangerRed,
+                                                modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp)
+                                            )
+                                        }
+                                    }
+
+                                    if (configs.isNotEmpty()) {
+                                        IconButton(
+                                            onClick = {
+                                                selectedTargetConfig?.let { cfg ->
+                                                    onApplyToConfig(cfg, item.fullEndpoint)
+                                                }
+                                            }
+                                        ) {
+                                            Icon(Icons.Default.NetworkCheck, contentDescription = "Apply", tint = CyberCyan)
+                                        }
+                                    }
+                                }
+                            }
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
-                // Anti-DPI Obfuscation injection toggle
-                Row(
+                Button(
+                    onClick = onDismiss,
                     modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant)
                 ) {
-                    Column(modifier = Modifier.weight(1f)) {
-                        Text("Inject AmneziaWG Anti-DPI Headers", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.SemiBold))
-                        Text("Adds Jc junk packets and S1-S4 randomized headers to bypass ISP blocking", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                    }
-                    Switch(
-                        checked = injectAntiDpi,
-                        onCheckedChange = { injectAntiDpi = it },
-                        colors = SwitchDefaults.colors(checkedThumbColor = CyberCyan, checkedTrackColor = CyberCyan.copy(alpha = 0.5f))
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(18.dp))
-
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    TextButton(onClick = onDismiss) {
-                        Text("Cancel")
-                    }
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Button(
-                        onClick = {
-                            onGenerate(name, licenseKey.ifBlank { null }, dnsChoice, endpointChoice, injectAntiDpi)
-                        },
-                        colors = ButtonDefaults.buttonColors(containerColor = CyberPurple)
-                    ) {
-                        Text("Generate WARP", color = MaterialTheme.colorScheme.onPrimary)
-                    }
+                    Text("Close", color = MaterialTheme.colorScheme.onSurface)
                 }
             }
         }
@@ -558,6 +878,8 @@ fun AdvancedWarpDialog(
 
 @Composable
 fun AddAwgConfigDialog(
+    defaultDns: String,
+    defaultSni: String,
     onDismiss: () -> Unit,
     onCreate: (
         name: String,
@@ -576,55 +898,61 @@ fun AddAwgConfigDialog(
         h2: Long,
         h3: Long,
         h4: Long,
+        i1: String?,
+        sni: String?,
         mtu: Int
     ) -> Unit
 ) {
-    var name by remember { mutableStateOf("AmneziaWG Server") }
-    var endpoint by remember { mutableStateOf("185.195.23.4:51820") }
-    var peerKey by remember { mutableStateOf("") }
-    var dnsChoice by remember { mutableStateOf("1.1.1.1, 1.0.0.1") }
-    var selectedPreset by remember { mutableStateOf<ObfuscationPreset?>(ObfuscationPreset.BALANCED) }
+    var name by remember { mutableStateOf("AmneziaWG Russian Bypass") }
+    var endpoint by remember { mutableStateOf("162.159.192.13:1074") }
+    var peerKey by remember { mutableStateOf("bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=") }
+    var dns by remember { mutableStateOf(defaultDns.ifBlank { "111.88.96.50, 111.88.96.51" }) }
+    var selectedPreset by remember { mutableStateOf(ObfuscationPreset.VERIFIED_AWG_RUSSIAN_BYPASS) }
 
     var jc by remember { mutableIntStateOf(4) }
-    var jmin by remember { mutableIntStateOf(64) }
-    var jmax by remember { mutableIntStateOf(512) }
-    var s1 by remember { mutableIntStateOf(15) }
-    var s2 by remember { mutableIntStateOf(30) }
-    var s3 by remember { mutableIntStateOf(10) }
-    var s4 by remember { mutableIntStateOf(8) }
-    var h1 by remember { mutableLongStateOf(1234567890L) }
-    var h2 by remember { mutableLongStateOf(2345678901L) }
-    var h3 by remember { mutableLongStateOf(3456789012L) }
-    var h4 by remember { mutableLongStateOf(4123456789L) }
-    var mtu by remember { mutableIntStateOf(1360) }
+    var jmin by remember { mutableIntStateOf(40) }
+    var jmax by remember { mutableIntStateOf(70) }
+    var s1 by remember { mutableIntStateOf(0) }
+    var s2 by remember { mutableIntStateOf(0) }
+    var s3 by remember { mutableIntStateOf(0) }
+    var s4 by remember { mutableIntStateOf(0) }
+    var h1 by remember { mutableLongStateOf(1L) }
+    var h2 by remember { mutableLongStateOf(2L) }
+    var h3 by remember { mutableLongStateOf(3L) }
+    var h4 by remember { mutableLongStateOf(4L) }
+    var i1 by remember { mutableStateOf("<b 0x2ae1f9c4708a38d94b0c791350a4d9ef4a87e20b3361849a0e671239c0f45532>") }
+    var sni by remember { mutableStateOf(defaultSni) }
+    var mtu by remember { mutableIntStateOf(1280) }
 
     Dialog(onDismissRequest = onDismiss) {
-        Surface(
+        Card(
             shape = RoundedCornerShape(16.dp),
-            color = MaterialTheme.colorScheme.surface,
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(vertical = 20.dp)
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            modifier = Modifier.fillMaxWidth().height(600.dp)
         ) {
             Column(
                 modifier = Modifier
-                    .padding(20.dp)
+                    .padding(18.dp)
                     .verticalScroll(rememberScrollState())
             ) {
                 Text(
-                    text = "New AmneziaWG Config",
-                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                    color = CyberCyan
+                    text = "Generate AmneziaWG Config",
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
+                )
+                Text(
+                    text = "Obfuscated WireGuard 2.0 / 3.0 with Russian Whitelist SNI",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
 
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
                     label = { Text("Profile Name") },
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))
@@ -632,161 +960,270 @@ fun AddAwgConfigDialog(
                 OutlinedTextField(
                     value = endpoint,
                     onValueChange = { endpoint = it },
-                    label = { Text("Endpoint (IP:Port)") },
-                    modifier = Modifier.fillMaxWidth()
+                    label = { Text("Server Endpoint (IP:Port)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))
 
                 OutlinedTextField(
-                    value = peerKey,
-                    onValueChange = { peerKey = it },
-                    label = { Text("Peer PublicKey (Auto-generated if empty)") },
-                    modifier = Modifier.fillMaxWidth()
+                    value = dns,
+                    onValueChange = { dns = it },
+                    label = { Text("DNS Resolvers") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
                 )
 
                 Spacer(modifier = Modifier.height(8.dp))
 
                 OutlinedTextField(
-                    value = dnsChoice,
-                    onValueChange = { dnsChoice = it },
-                    label = { Text("DNS Resolver") },
-                    modifier = Modifier.fillMaxWidth()
+                    value = sni,
+                    onValueChange = { sni = it },
+                    label = { Text("SNI Spoofing Domain (e.g. vk.com)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
                 )
 
-                Spacer(modifier = Modifier.height(6.dp))
+                Spacer(modifier = Modifier.height(12.dp))
 
-                Text("Quick DNS Selector:", style = MaterialTheme.typography.labelSmall, color = CyberCyan)
-                Spacer(modifier = Modifier.height(4.dp))
+                Text("Obfuscation Preset", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .horizontalScroll(rememberScrollState()),
                     horizontalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    DnsCatalog.servers.forEach { server ->
-                        val isSelected = dnsChoice == server.formatted
-                        Surface(
-                            shape = RoundedCornerShape(8.dp),
-                            color = if (isSelected) CyberCyan.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant,
-                            border = BorderStroke(1.dp, if (isSelected) CyberCyan else MaterialTheme.colorScheme.outline),
-                            modifier = Modifier.clickable { dnsChoice = server.formatted }
-                        ) {
-                            Text(
-                                text = server.name,
-                                style = MaterialTheme.typography.labelSmall,
-                                color = if (isSelected) CyberCyan else MaterialTheme.colorScheme.onSurface,
-                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 6.dp)
-                            )
-                        }
+                    ObfuscationPreset.entries.forEach { preset ->
+                        FilterChip(
+                            selected = selectedPreset == preset,
+                            onClick = {
+                                selectedPreset = preset
+                                when (preset) {
+                                    ObfuscationPreset.VERIFIED_AWG_RUSSIAN_BYPASS -> {
+                                        jc = 4; jmin = 40; jmax = 70; s1 = 0; s2 = 0; s3 = 0; s4 = 0
+                                        h1 = 1L; h2 = 2L; h3 = 3L; h4 = 4L; mtu = 1280
+                                    }
+                                    ObfuscationPreset.EXTREME_ANTI_DPI -> {
+                                        jc = 6; jmin = 120; jmax = 520; s1 = 32; s2 = 40; s3 = 24; s4 = 16
+                                        h1 = 123456L; h2 = 234567L; h3 = 345678L; h4 = 456789L; mtu = 1360
+                                    }
+                                    ObfuscationPreset.BALANCED -> {
+                                        jc = 3; jmin = 64; jmax = 256; s1 = 16; s2 = 24; s3 = 12; s4 = 8
+                                        h1 = 1L; h2 = 2L; h3 = 3L; h4 = 4L; mtu = 1360
+                                    }
+                                    else -> {}
+                                }
+                            },
+                            label = { Text(preset.name.replace("_", " "), style = MaterialTheme.typography.labelSmall) }
+                        )
                     }
                 }
 
-                Spacer(modifier = Modifier.height(14.dp))
-                Text("Obfuscation Headers (AmneziaWG 2.0)", style = MaterialTheme.typography.titleSmall, color = CyberPurple)
+                Spacer(modifier = Modifier.height(12.dp))
 
+                Text("Obfuscation Parameters (AmneziaWG 2.0)", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
                         value = jc.toString(),
-                        onValueChange = { jc = it.toIntOrNull() ?: jc },
-                        label = { Text("Jc (0-10)") },
+                        onValueChange = { jc = it.toIntOrNull() ?: 0 },
+                        label = { Text("Jc") },
                         modifier = Modifier.weight(1f)
                     )
-                    OutlinedTextField(
-                        value = mtu.toString(),
-                        onValueChange = { mtu = it.toIntOrNull() ?: mtu },
-                        label = { Text("MTU") },
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
                         value = jmin.toString(),
-                        onValueChange = { jmin = it.toIntOrNull() ?: jmin },
+                        onValueChange = { jmin = it.toIntOrNull() ?: 0 },
                         label = { Text("Jmin") },
                         modifier = Modifier.weight(1f)
                     )
                     OutlinedTextField(
                         value = jmax.toString(),
-                        onValueChange = { jmax = it.toIntOrNull() ?: jmax },
+                        onValueChange = { jmax = it.toIntOrNull() ?: 0 },
                         label = { Text("Jmax") },
                         modifier = Modifier.weight(1f)
                     )
                 }
 
+                Spacer(modifier = Modifier.height(8.dp))
+
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
                         value = s1.toString(),
-                        onValueChange = { s1 = it.toIntOrNull() ?: s1 },
-                        label = { Text("S1 (0-64)") },
+                        onValueChange = { s1 = it.toIntOrNull() ?: 0 },
+                        label = { Text("S1") },
                         modifier = Modifier.weight(1f)
                     )
                     OutlinedTextField(
                         value = s2.toString(),
-                        onValueChange = { s2 = it.toIntOrNull() ?: s2 },
-                        label = { Text("S2 (0-64)") },
+                        onValueChange = { s2 = it.toIntOrNull() ?: 0 },
+                        label = { Text("S2") },
                         modifier = Modifier.weight(1f)
                     )
-                }
-
-                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     OutlinedTextField(
                         value = s3.toString(),
-                        onValueChange = { s3 = it.toIntOrNull() ?: s3 },
-                        label = { Text("S3 (0-64)") },
+                        onValueChange = { s3 = it.toIntOrNull() ?: 0 },
+                        label = { Text("S3") },
                         modifier = Modifier.weight(1f)
                     )
                     OutlinedTextField(
                         value = s4.toString(),
-                        onValueChange = { s4 = it.toIntOrNull() ?: s4 },
-                        label = { Text("S4 (0-32)") },
+                        onValueChange = { s4 = it.toIntOrNull() ?: 0 },
+                        label = { Text("S4") },
                         modifier = Modifier.weight(1f)
                     )
                 }
 
-                OutlinedTextField(
-                    value = h1.toString(),
-                    onValueChange = { h1 = it.toLongOrNull() ?: h1 },
-                    label = { Text("H1 (Initiation Magic)") },
-                    modifier = Modifier.fillMaxWidth()
-                )
+                Spacer(modifier = Modifier.height(8.dp))
 
-                OutlinedTextField(
-                    value = h2.toString(),
-                    onValueChange = { h2 = it.toLongOrNull() ?: h2 },
-                    label = { Text("H2 (Response Magic)") },
-                    modifier = Modifier.fillMaxWidth()
-                )
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = h1.toString(),
+                        onValueChange = { h1 = it.toLongOrNull() ?: 1L },
+                        label = { Text("H1") },
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedTextField(
+                        value = h2.toString(),
+                        onValueChange = { h2 = it.toLongOrNull() ?: 2L },
+                        label = { Text("H2") },
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedTextField(
+                        value = h3.toString(),
+                        onValueChange = { h3 = it.toLongOrNull() ?: 3L },
+                        label = { Text("H3") },
+                        modifier = Modifier.weight(1f)
+                    )
+                    OutlinedTextField(
+                        value = h4.toString(),
+                        onValueChange = { h4 = it.toLongOrNull() ?: 4L },
+                        label = { Text("H4") },
+                        modifier = Modifier.weight(1f)
+                    )
+                }
 
-                OutlinedTextField(
-                    value = h3.toString(),
-                    onValueChange = { h3 = it.toLongOrNull() ?: h3 },
-                    label = { Text("H3 (Cookie Magic)") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                OutlinedTextField(
-                    value = h4.toString(),
-                    onValueChange = { h4 = it.toLongOrNull() ?: h4 },
-                    label = { Text("H4 (Transport Magic)") },
-                    modifier = Modifier.fillMaxWidth()
-                )
-
-                Spacer(modifier = Modifier.height(18.dp))
+                Spacer(modifier = Modifier.height(16.dp))
 
                 Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                    TextButton(onClick = onDismiss) {
-                        Text("Cancel")
-                    }
+                    TextButton(onClick = onDismiss) { Text("Cancel") }
                     Spacer(modifier = Modifier.width(8.dp))
                     Button(
                         onClick = {
-                            onCreate(name, endpoint, peerKey, dnsChoice, selectedPreset, jc, jmin, jmax, s1, s2, s3, s4, h1, h2, h3, h4, mtu)
+                            onCreate(name, endpoint, peerKey, dns, selectedPreset, jc, jmin, jmax, s1, s2, s3, s4, h1, h2, h3, h4, i1, sni, mtu)
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = CyberCyan)
                     ) {
-                        Text("Save Config", color = MaterialTheme.colorScheme.onPrimary)
+                        Text("Create Config")
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun GenerateWarpDialog(
+    isGenerating: Boolean,
+    defaultDns: String,
+    onDismiss: () -> Unit,
+    onGenerate: (name: String, license: String?, dns: String, endpoint: String, antiDpi: Boolean) -> Unit
+) {
+    var name by remember { mutableStateOf("WARP Russian Bypass Profile") }
+    var license by remember { mutableStateOf("") }
+    var dns by remember { mutableStateOf(defaultDns.ifBlank { "111.88.96.50, 111.88.96.51" }) }
+    var endpoint by remember { mutableStateOf("162.159.192.13:1074") }
+    var injectAntiDpi by remember { mutableStateOf(true) }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(18.dp)) {
+                Text(
+                    text = "Generate Cloudflare WARP / AWG",
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
+                )
+                Text(
+                    text = "Auto-probes 14+ mirrors and registers unblocked bypass port 1074",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Profile Name") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                OutlinedTextField(
+                    value = endpoint,
+                    onValueChange = { endpoint = it },
+                    label = { Text("Bypass Endpoint (IP:Port)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                OutlinedTextField(
+                    value = dns,
+                    onValueChange = { dns = it },
+                    label = { Text("DNS Resolvers") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                OutlinedTextField(
+                    value = license,
+                    onValueChange = { license = it },
+                    label = { Text("WARP+ License Key (Optional)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
+                Spacer(modifier = Modifier.height(12.dp))
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Column(modifier = Modifier.weight(1f)) {
+                        Text("Inject Anti-DPI Obfuscation", style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Bold))
+                        Text("Adds Jc=4, Jitter, and Russian SNI", style = MaterialTheme.typography.labelSmall, color = CyberCyan)
+                    }
+                    Switch(
+                        checked = injectAntiDpi,
+                        onCheckedChange = { injectAntiDpi = it },
+                        colors = SwitchDefaults.colors(checkedThumbColor = CyberCyan)
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(16.dp))
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onDismiss) { Text("Cancel") }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = { onGenerate(name, license.ifBlank { null }, dns, endpoint, injectAntiDpi) },
+                        enabled = !isGenerating,
+                        colors = ButtonDefaults.buttonColors(containerColor = CyberPurple)
+                    ) {
+                        if (isGenerating) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), color = MaterialTheme.colorScheme.onPrimary)
+                        } else {
+                            Text("Generate Profile")
+                        }
                     }
                 }
             }
@@ -797,133 +1234,111 @@ fun AddAwgConfigDialog(
 @Composable
 fun ImportConfigDialog(
     onDismiss: () -> Unit,
-    onImport: (rawText: String, name: String) -> Unit
+    onImport: (raw: String, name: String) -> Unit
 ) {
+    var name by remember { mutableStateOf("Imported AWG") }
     var rawText by remember { mutableStateOf("") }
-    var name by remember { mutableStateOf("") }
 
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        title = { Text("Import AWG / WireGuard Config", color = CyberCyan) },
-        text = {
-            Column {
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(modifier = Modifier.padding(18.dp)) {
+                Text(
+                    text = "Import WireGuard / AWG .conf",
+                    style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold)
+                )
+
+                Spacer(modifier = Modifier.height(10.dp))
+
                 OutlinedTextField(
                     value = name,
                     onValueChange = { name = it },
-                    label = { Text("Profile Name (Optional)") },
-                    modifier = Modifier.fillMaxWidth()
+                    label = { Text("Profile Name") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
                 )
+
                 Spacer(modifier = Modifier.height(8.dp))
+
                 OutlinedTextField(
                     value = rawText,
                     onValueChange = { rawText = it },
-                    label = { Text("Paste .conf content") },
+                    label = { Text("Paste .conf File Content") },
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(160.dp),
+                        .height(180.dp),
                     maxLines = 10
                 )
-            }
-        },
-        confirmButton = {
-            Button(
-                onClick = { onImport(rawText, name) },
-                colors = ButtonDefaults.buttonColors(containerColor = CyberCyan)
-            ) {
-                Text("Import", color = MaterialTheme.colorScheme.onPrimary)
-            }
-        },
-        dismissButton = {
-            TextButton(onClick = onDismiss) {
-                Text("Cancel")
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
+                    TextButton(onClick = onDismiss) { Text("Cancel") }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = { onImport(rawText, name) },
+                        enabled = rawText.isNotBlank(),
+                        colors = ButtonDefaults.buttonColors(containerColor = CyberCyan)
+                    ) {
+                        Text("Import")
+                    }
+                }
             }
         }
-    )
+    }
 }
 
 @Composable
-fun QrCodeViewerDialog(
-    config: AwgConfig,
-    onDismiss: () -> Unit
-) {
-    val confText = remember(config) { config.toConfString() }
-    val qrBitmap = remember(confText) {
-        QrCodeGenerator.generateQrBitmap(confText, 600)
+fun QrCodeDialog(config: AwgConfig, onDismiss: () -> Unit) {
+    val bitmap = remember(config) {
+        QrCodeGenerator.generateQrBitmap(config.toConfString(), 512)
     }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = "${config.name} (QR)",
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                color = CyberCyan
-            )
-        },
+        title = { Text(text = "${config.name} (QR Code)") },
         text = {
             Column(
                 modifier = Modifier.fillMaxWidth(),
                 horizontalAlignment = Alignment.CenterHorizontally
             ) {
-                qrBitmap?.let { bmp ->
-                    Image(
-                        bitmap = bmp.asImageBitmap(),
-                        contentDescription = "Config QR Code",
-                        modifier = Modifier
-                            .size(240.dp)
-                            .padding(8.dp)
-                    )
-                } ?: run {
-                    Text("Failed to generate QR Code")
-                }
-                Spacer(modifier = Modifier.height(8.dp))
-                Text(
-                    text = "Scan with AmneziaWG or WireGuard app",
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                Image(
+                    bitmap = bitmap.asImageBitmap(),
+                    contentDescription = "Config QR Code",
+                    modifier = Modifier.size(240.dp)
                 )
             }
         },
         confirmButton = {
-            Button(onClick = onDismiss, colors = ButtonDefaults.buttonColors(containerColor = CyberCyan)) {
-                Text("Close", color = MaterialTheme.colorScheme.onPrimary)
+            Button(onClick = onDismiss) {
+                Text("Close")
             }
         }
     )
 }
 
 @Composable
-fun ExportConfigDialog(
-    config: AwgConfig,
-    onDismiss: () -> Unit
-) {
+fun ExportConfigDialog(config: AwgConfig, onDismiss: () -> Unit) {
     val context = LocalContext.current
     val confText = remember(config) { config.toConfString() }
 
     AlertDialog(
         onDismissRequest = onDismiss,
-        title = {
-            Text(
-                text = "Export ${config.name}",
-                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                color = CyberPurple
-            )
-        },
+        title = { Text(text = "${config.name}.conf") },
         text = {
             Column(modifier = Modifier.fillMaxWidth()) {
                 Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant,
                     shape = RoundedCornerShape(8.dp),
-                    color = MaterialTheme.colorScheme.surface,
-                    border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline),
-                    modifier = Modifier.fillMaxWidth()
+                    modifier = Modifier.fillMaxWidth().height(260.dp)
                 ) {
                     Text(
                         text = confText,
-                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace, fontSize = 11.sp),
-                        modifier = Modifier
-                            .padding(10.dp)
-                            .height(200.dp)
-                            .verticalScroll(rememberScrollState())
+                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace),
+                        modifier = Modifier.padding(10.dp).verticalScroll(rememberScrollState())
                     )
                 }
             }
@@ -932,15 +1347,14 @@ fun ExportConfigDialog(
             Button(
                 onClick = {
                     val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    val clip = ClipData.newPlainText("AWG Config", confText)
-                    clipboard.setPrimaryClip(clip)
+                    clipboard.setPrimaryClip(ClipData.newPlainText("AWG Config", confText))
                     onDismiss()
                 },
                 colors = ButtonDefaults.buttonColors(containerColor = CyberCyan)
             ) {
                 Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(4.dp))
-                Text("Copy .conf", color = MaterialTheme.colorScheme.onPrimary)
+                Text("Copy .conf")
             }
         },
         dismissButton = {

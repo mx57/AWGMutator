@@ -18,17 +18,24 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
+import java.net.DatagramSocket
 import java.net.InetAddress
+import java.net.Socket
 
 /**
  * Android Foreground VpnService implementing AmneziaWG / WireGuard TUN tunnel handling,
- * real [TunPacketRouter] UDP/DNS packet forwarding, and runtime [DpiNoiseManager] handshake modulation.
+ * real [TunPacketRouter] IPv4 TCP/UDP/ICMP forwarding, and runtime [DpiNoiseManager] handshake modulation.
  */
 class AwgVpnService : VpnService() {
 
     private var vpnInterface: ParcelFileDescriptor? = null
     private val serviceScope = CoroutineScope(Dispatchers.IO + Job())
     private var packetRouter: TunPacketRouter? = null
+
+    override fun onCreate() {
+        super.onCreate()
+        activeService = this
+    }
 
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         val action = intent?.action
@@ -101,13 +108,32 @@ class AwgVpnService : VpnService() {
                 }
             }
 
-            // Add routes
-            runCatching {
-                builder.addRoute(InetAddress.getByName("0.0.0.0"), 0)
-                builder.addRoute(InetAddress.getByName("::"), 0)
+            // Add routes based on AllowedIPs or default all traffic
+            val routes = config.allowedIps.split(",").map { it.trim() }.filter { it.isNotBlank() }
+            if (routes.isEmpty() || routes.any { it == "0.0.0.0/0" }) {
+                runCatching { builder.addRoute(InetAddress.getByName("0.0.0.0"), 0) }
+                runCatching { builder.addRoute(InetAddress.getByName("::"), 0) }
+            } else {
+                for (cidr in routes) {
+                    val parts = cidr.split("/")
+                    if (parts.isNotEmpty()) {
+                        val ip = parts[0].trim()
+                        val mask = if (parts.size > 1) parts[1].trim().toIntOrNull() ?: 32 else 32
+                        runCatching {
+                            if (!ip.contains(":")) {
+                                builder.addRoute(InetAddress.getByName(ip), mask)
+                            }
+                        }
+                    }
+                }
             }
 
-            // Apply Split Tunneling
+            // Always disallow this app itself so probe sockets never get looped back into TUN
+            runCatching {
+                builder.addDisallowedApplication(packageName)
+            }
+
+            // Apply User Split Tunneling preferences
             val splitManager = App.instance.splitTunnelManager
             val selectedApps = splitManager.getSelectedPackages()
 
@@ -123,7 +149,7 @@ class AwgVpnService : VpnService() {
                     }
                 }
                 SplitTunnelMode.ALL_THROUGH_VPN -> {
-                    // Route all traffic
+                    // All other apps through VPN
                 }
             }
 
@@ -143,7 +169,7 @@ class AwgVpnService : VpnService() {
                     )
                 )
 
-                // Start real User-space packet router with protected sockets
+                // Start real User-space packet router
                 packetRouter?.stop()
                 packetRouter = TunPacketRouter(
                     vpnService = this,
@@ -185,6 +211,9 @@ class AwgVpnService : VpnService() {
 
     override fun onDestroy() {
         super.onDestroy()
+        if (activeService == this) {
+            activeService = null
+        }
         serviceScope.cancel()
         stopTunnel(null)
     }
@@ -208,7 +237,7 @@ class AwgVpnService : VpnService() {
             .setOngoing(true)
             .setPriority(NotificationCompat.PRIORITY_LOW)
             .build()
-    }
+        }
 
     private fun updateNotification(text: String) {
         val notification = createNotification(text)
@@ -223,5 +252,16 @@ class AwgVpnService : VpnService() {
         const val EXTRA_CONFIG_NAME = "extra_config_name"
         const val EXTRA_CONFIG_ID = "extra_config_id"
         const val NOTIFICATION_ID = 1001
+
+        @Volatile
+        var activeService: AwgVpnService? = null
+
+        fun protectSocket(socket: Socket): Boolean {
+            return activeService?.protect(socket) ?: false
+        }
+
+        fun protectDatagramSocket(socket: DatagramSocket): Boolean {
+            return activeService?.protect(socket) ?: false
+        }
     }
 }

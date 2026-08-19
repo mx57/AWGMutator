@@ -5,10 +5,10 @@ import java.util.Random
 import java.util.UUID
 
 /**
- * Uniform crossover strategy for combining genes from two parent genomes including DNS.
+ * Uniform crossover strategy for combining genes from two parent genomes including DNS, I1, SNI, and Endpoints.
  */
 class CrossoverStrategy(
-    private val crossoverRate: Double = 0.7
+    private val crossoverRate: Double = 0.75
 ) {
     private val random = Random()
 
@@ -35,6 +35,9 @@ class CrossoverStrategy(
             h2 = pick(parentA.h2, parentB.h2),
             h3 = pick(parentA.h3, parentB.h3),
             h4 = pick(parentA.h4, parentB.h4),
+            i1 = pick(parentA.i1, parentB.i1),
+            sni = pick(parentA.sni, parentB.sni),
+            endpoint = pick(parentA.endpoint, parentB.endpoint),
             mtu = pick(parentA.mtu, parentB.mtu),
             dns = pick(parentA.dns, parentB.dns),
             generation = generation
@@ -53,6 +56,9 @@ class CrossoverStrategy(
             h2 = pick(parentB.h2, parentA.h2),
             h3 = pick(parentB.h3, parentA.h3),
             h4 = pick(parentB.h4, parentA.h4),
+            i1 = pick(parentB.i1, parentA.i1),
+            sni = pick(parentB.sni, parentA.sni),
+            endpoint = pick(parentB.endpoint, parentA.endpoint),
             mtu = pick(parentB.mtu, parentA.mtu),
             dns = pick(parentB.dns, parentA.dns),
             generation = generation

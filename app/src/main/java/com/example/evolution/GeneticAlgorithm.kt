@@ -69,7 +69,8 @@ class GeneticAlgorithm(
         baseConfig: AwgConfig,
         populationSize: Int = 12,
         maxGenerations: Int = 15,
-        targetUrls: List<String> = pingTester.defaultTargets
+        targetUrls: List<String> = pingTester.defaultTargets,
+        settings: com.example.domain.model.EvolutionSettings = com.example.domain.model.EvolutionSettings()
     ): Genome? {
         isCancelled = false
         diagnostics.reset()
@@ -83,7 +84,11 @@ class GeneticAlgorithm(
             eliteCount = 2
         )
         val crossoverStrategy = CrossoverStrategy(crossoverRate = 0.75)
-        var mutationStrategy = MutationStrategy(mutationRate = 0.20, magnitude = 0.25)
+        var mutationStrategy = MutationStrategy(
+            mutationRate = settings.mutationRate.toDouble(),
+            magnitude = 0.25,
+            settings = settings
+        )
 
         val seedGenome = Genome(
             jc = baseConfig.jc,
@@ -97,6 +102,9 @@ class GeneticAlgorithm(
             h2 = baseConfig.h2,
             h3 = baseConfig.h3,
             h4 = baseConfig.h4,
+            i1 = baseConfig.i1,
+            sni = baseConfig.sni,
+            endpoint = baseConfig.endpoint,
             mtu = baseConfig.mtu
         ).validated()
 

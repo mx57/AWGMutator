@@ -4,7 +4,9 @@ import com.example.domain.model.AwgConfig
 import java.util.UUID
 
 /**
- * Parser for AmneziaWG / WireGuard `.conf` configuration files.
+ * Robust parser for AmneziaWG 2.0/3.0 & WireGuard `.conf` configuration files.
+ * Supports custom Init payload noise (I1..I4), Russian/Global SNI spoofing,
+ * fine-grained AllowedIPs subnets, and legacy/WARP headers.
  */
 object ConfigParser {
 
@@ -14,9 +16,9 @@ object ConfigParser {
     fun parse(rawContent: String, defaultName: String = "Imported AWG"): Result<AwgConfig> {
         return runCatching {
             var privateKey = ""
-            var address = "10.0.0.2/32"
-            var dns = "1.1.1.1"
-            var mtu = 1400
+            var address = "172.16.0.2/32"
+            var dns = "111.88.96.50, 111.88.96.51"
+            var mtu = 1280
             var jc = 0
             var jmin = 0
             var jmax = 0
@@ -28,6 +30,11 @@ object ConfigParser {
             var h2 = 0L
             var h3 = 0L
             var h4 = 0L
+            var i1: String? = null
+            var i2: String? = null
+            var i3: String? = null
+            var i4: String? = null
+            var sni: String? = null
             var reserved: String? = null
 
             var peerPublicKey = ""
@@ -58,9 +65,11 @@ object ConfigParser {
                     "interface" -> {
                         when (key) {
                             "privatekey" -> privateKey = value
-                            "address" -> address = value
+                            "address" -> {
+                                address = if (!value.contains("/")) "$value/32" else value
+                            }
                             "dns" -> dns = value
-                            "mtu" -> mtu = value.toIntOrNull() ?: 1400
+                            "mtu" -> mtu = value.toIntOrNull() ?: 1280
                             "jc" -> jc = value.toIntOrNull() ?: 0
                             "jmin" -> jmin = value.toIntOrNull() ?: 0
                             "jmax" -> jmax = value.toIntOrNull() ?: 0
@@ -72,6 +81,11 @@ object ConfigParser {
                             "h2" -> h2 = value.toLongOrNull() ?: 0L
                             "h3" -> h3 = value.toLongOrNull() ?: 0L
                             "h4" -> h4 = value.toLongOrNull() ?: 0L
+                            "i1" -> i1 = value
+                            "i2" -> i2 = value
+                            "i3" -> i3 = value
+                            "i4" -> i4 = value
+                            "sni" -> sni = value
                             "reserved" -> reserved = value
                         }
                     }
@@ -97,7 +111,7 @@ object ConfigParser {
                 throw IllegalArgumentException("Missing Endpoint in [Peer]")
             }
 
-            val isWarp = !reserved.isNullOrBlank() || endpoint.contains("162.159.")
+            val isWarp = !reserved.isNullOrBlank() || endpoint.contains("162.159.") || endpoint.contains("188.114.")
 
             AwgConfig(
                 id = UUID.randomUUID().toString(),
@@ -117,6 +131,11 @@ object ConfigParser {
                 h2 = h2,
                 h3 = h3,
                 h4 = h4,
+                i1 = i1,
+                i2 = i2,
+                i3 = i3,
+                i4 = i4,
+                sni = sni,
                 peerPublicKey = peerPublicKey,
                 presharedKey = presharedKey,
                 allowedIps = allowedIps,

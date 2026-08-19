@@ -1,16 +1,20 @@
 package com.example.evolution
 
 import com.example.domain.model.DnsCatalog
+import com.example.domain.model.EndpointCatalog
+import com.example.domain.model.EvolutionSettings
 import com.example.domain.model.Genome
+import com.example.domain.model.SniCatalog
 import java.util.Random
 
 /**
- * Mutates individual genes within configurable magnitude with specific Anti-DPI pattern shifts
- * (frequently altering Jmin/Jmax randomization spreads, payload fragmentation offsets, and DNS resolvers).
+ * Mutates individual genes within configurable magnitude according to [EvolutionSettings]
+ * (altering Jc, Jmin/Jmax, S1..S4, H1..H4, I1 payload noise, Russian SNI, Endpoints, and DNS resolvers).
  */
 class MutationStrategy(
     private val mutationRate: Double = 0.20,
-    private val magnitude: Double = 0.25
+    private val magnitude: Double = 0.25,
+    private val settings: EvolutionSettings = EvolutionSettings()
 ) {
     private val random = Random()
 
@@ -26,6 +30,9 @@ class MutationStrategy(
         var h2 = genome.h2
         var h3 = genome.h3
         var h4 = genome.h4
+        var i1 = genome.i1
+        var sni = genome.sni
+        var endpoint = genome.endpoint
         var mtu = genome.mtu
         var dns = genome.dns
 
@@ -38,33 +45,62 @@ class MutationStrategy(
         fun mutateLong(value: Long): Long {
             if (random.nextDouble() > mutationRate) return value
             val delta = ((random.nextDouble() * 2 - 1) * 75000000L).toLong()
-            return (value + delta).coerceIn(1000000L, 4294967295L)
+            return (value + delta).coerceIn(1L, 4294967295L)
         }
 
-        // Apply Junk Packet dynamic pattern mutations
-        jc = mutateInt(jc, 1, 9)
-        jmin = mutateInt(jmin, 32, 512)
-        // Ensure Jmax maintains sufficient spread above Jmin for entropy
-        val minSpread = 48 + random.nextInt(96)
-        jmax = mutateInt(jmax, jmin + minSpread, 1024)
+        // Apply Junk Packet mutations
+        if (settings.mutateJc) {
+            jc = mutateInt(jc, 0, 10)
+        }
+        if (settings.mutateJminJmax) {
+            jmin = mutateInt(jmin, 32, 512)
+            val minSpread = 30 + random.nextInt(64)
+            jmax = mutateInt(jmax, jmin + minSpread, 1024)
+        }
 
         // Apply Payload Fragmentation S1..S4 mutations
-        s1 = mutateInt(s1, 10, 64)
-        s2 = mutateInt(s2, 14, 64)
-        s3 = mutateInt(s3, 8, 64)
-        s4 = mutateInt(s4, 4, 32)
+        if (settings.mutateS1S2) {
+            s1 = mutateInt(s1, 0, 64)
+            s2 = mutateInt(s2, 0, 64)
+        }
+        if (settings.mutateS3S4) {
+            s3 = mutateInt(s3, 0, 64)
+            s4 = mutateInt(s4, 0, 32)
+        }
 
         // Mutate Magic Headers
-        h1 = mutateLong(h1)
-        h2 = mutateLong(h2)
-        h3 = mutateLong(h3)
-        h4 = mutateLong(h4)
+        if (settings.mutateHeadersH1H4) {
+            h1 = mutateLong(h1)
+            h2 = mutateLong(h2)
+            h3 = mutateLong(h3)
+            h4 = mutateLong(h4)
+        }
 
         // Mutate MTU in safe stealth range
-        mtu = mutateInt(mtu, 1280, 1400)
+        if (settings.mutateMtu) {
+            mtu = mutateInt(mtu, 1280, 1420)
+        }
 
-        // Mutate DNS Server Resolver with probability
-        if (random.nextDouble() <= mutationRate * 1.25) {
+        // Mutate I1 (Init payload noise / AmneziaWG 2.0 signatures)
+        if (settings.mutatePayloadNoiseI1 && random.nextDouble() <= mutationRate * 1.2) {
+            val noiseLen = 32 + random.nextInt(96)
+            val bytes = ByteArray(noiseLen).apply { random.nextBytes(this) }
+            val hex = bytes.joinToString("") { "%02x".format(it) }
+            i1 = "<b 0x$hex>"
+        }
+
+        // Mutate Russian Whitelist SNI Domain
+        if (settings.mutateSni && random.nextDouble() <= mutationRate * 1.5) {
+            sni = SniCatalog.getRandomRussianSni()
+        }
+
+        // Mutate Endpoint
+        if (settings.mutateEndpoints && random.nextDouble() <= mutationRate * 1.2) {
+            endpoint = EndpointCatalog.getRandomEndpoint()
+        }
+
+        // Mutate DNS Server Resolver
+        if (settings.mutateDns && random.nextDouble() <= mutationRate * 1.25) {
             dns = DnsCatalog.getRandomDns()
         }
 
@@ -80,6 +116,9 @@ class MutationStrategy(
             h2 = h2,
             h3 = h3,
             h4 = h4,
+            i1 = i1,
+            sni = sni,
+            endpoint = endpoint,
             mtu = mtu,
             dns = dns
         ).validated()

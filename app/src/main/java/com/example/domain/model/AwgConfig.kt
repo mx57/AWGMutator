@@ -9,24 +9,29 @@ data class AwgConfig(
     val id: String = UUID.randomUUID().toString(),
     val name: String,
     val privateKey: String,
-    val address: String = "10.0.0.2/32",
-    val dns: String = "1.1.1.1, 8.8.8.8",
-    val mtu: Int = 1400,
-    val jc: Int = 5,
-    val jmin: Int = 64,
-    val jmax: Int = 512,
-    val s1: Int = 17,
-    val s2: Int = 33,
-    val s3: Int = 11,
-    val s4: Int = 8,
-    val h1: Long = 1234567890L,
-    val h2: Long = 2345678901L,
-    val h3: Long = 3456789012L,
-    val h4: Long = 4294967290L,
-    val peerPublicKey: String,
+    val address: String = "172.16.0.2/32",
+    val dns: String = "111.88.96.50, 111.88.96.51",
+    val mtu: Int = 1280,
+    val jc: Int = 4,
+    val jmin: Int = 40,
+    val jmax: Int = 70,
+    val s1: Int = 0,
+    val s2: Int = 0,
+    val s3: Int = 0,
+    val s4: Int = 0,
+    val h1: Long = 1L,
+    val h2: Long = 2L,
+    val h3: Long = 3L,
+    val h4: Long = 4L,
+    val i1: String? = null,
+    val i2: String? = null,
+    val i3: String? = null,
+    val i4: String? = null,
+    val sni: String? = null,
+    val peerPublicKey: String = "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=",
     val presharedKey: String? = null,
-    val allowedIps: String = "0.0.0.0/0, ::/0",
-    val endpoint: String,
+    val allowedIps: String = "1.0.0.0/8, 2.0.0.0/7, 4.0.0.0/6, 8.0.0.0/7, 11.0.0.0/8, 12.0.0.0/6, 16.0.0.0/4, 32.0.0.0/3, 64.0.0.0/3, 96.0.0.0/4, 112.0.0.0/5, 120.0.0.0/6, 124.0.0.0/7, 126.0.0.0/8, 128.0.0.0/3, 160.0.0.0/5, 168.0.0.0/8, 169.0.0.0/9, 169.128.0.0/10, 169.192.0.0/11, 169.224.0.0/12, 169.240.0.0/13, 169.248.0.0/14, 169.252.0.0/15, 169.255.0.0/16, 170.0.0.0/7, 172.0.0.0/12, 172.32.0.0/11, 172.64.0.0/10, 172.128.0.0/9, 173.0.0.0/8, 174.0.0.0/7, 176.0.0.0/4, 192.0.0.0/9, 192.128.0.0/11, 192.160.0.0/13, 192.169.0.0/16, 192.170.0.0/15, 192.172.0.0/14, 192.176.0.0/12, 192.192.0.0/10, 193.0.0.0/8, 194.0.0.0/7, 196.0.0.0/6, 200.0.0.0/5, 208.0.0.0/4, 224.0.0.0/4, ::/1, 8000::/2, c000::/3, e000::/4, f000::/5, f800::/6, fe00::/9, fec0::/10, ff00::/8",
+    val endpoint: String = "162.159.192.13:1074",
     val persistentKeepalive: Int = 25,
     val isWarp: Boolean = false,
     val reserved: String? = null,
@@ -41,20 +46,36 @@ data class AwgConfig(
         val builder = StringBuilder()
         builder.appendLine("[Interface]")
         builder.appendLine("PrivateKey = $privateKey")
-        builder.appendLine("Address = $address")
+        val cleanAddr = if (address.endsWith("/32")) address.removeSuffix("/32") else address
+        builder.appendLine("Address = $cleanAddr")
         builder.appendLine("DNS = $dns")
         builder.appendLine("MTU = $mtu")
-        if (jc > 0) builder.appendLine("Jc = $jc")
-        if (jmin > 0) builder.appendLine("Jmin = $jmin")
-        if (jmax > 0) builder.appendLine("Jmax = $jmax")
-        if (s1 > 0) builder.appendLine("S1 = $s1")
-        if (s2 > 0) builder.appendLine("S2 = $s2")
-        if (s3 > 0) builder.appendLine("S3 = $s3")
-        if (s4 > 0) builder.appendLine("S4 = $s4")
-        if (h1 > 0) builder.appendLine("H1 = $h1")
-        if (h2 > 0) builder.appendLine("H2 = $h2")
-        if (h3 > 0) builder.appendLine("H3 = $h3")
-        if (h4 > 0) builder.appendLine("H4 = $h4")
+        builder.appendLine("S1 = $s1")
+        builder.appendLine("S2 = $s2")
+        builder.appendLine("S3 = $s3")
+        builder.appendLine("S4 = $s4")
+        builder.appendLine("Jc = $jc")
+        builder.appendLine("Jmin = $jmin")
+        builder.appendLine("Jmax = $jmax")
+        builder.appendLine("H1 = $h1")
+        builder.appendLine("H2 = $h2")
+        builder.appendLine("H3 = $h3")
+        builder.appendLine("H4 = $h4")
+        if (!i1.isNullOrBlank()) {
+            builder.appendLine("I1 = $i1")
+        }
+        if (!i2.isNullOrBlank()) {
+            builder.appendLine("I2 = $i2")
+        }
+        if (!i3.isNullOrBlank()) {
+            builder.appendLine("I3 = $i3")
+        }
+        if (!i4.isNullOrBlank()) {
+            builder.appendLine("I4 = $i4")
+        }
+        if (!sni.isNullOrBlank()) {
+            builder.appendLine("SNI = $sni")
+        }
         if (!reserved.isNullOrBlank()) {
             builder.appendLine("Reserved = $reserved")
         }

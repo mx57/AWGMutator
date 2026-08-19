@@ -3,13 +3,13 @@ package com.example.domain.model
 import java.util.UUID
 
 /**
- * Represents an individual genetic profile encoding AmneziaWG obfuscation parameters
- * and censorship-resistant DNS resolver configuration.
+ * Represents an individual genetic profile encoding AmneziaWG obfuscation parameters,
+ * custom handshake noise (I1), Russian whitelist SNI, and censorship-resistant DNS resolver configuration.
  */
 data class Genome(
     val id: String = UUID.randomUUID().toString(),
     val jc: Int,          // 0..10
-    val jmin: Int,        // 64..1024
+    val jmin: Int,        // 32..1024
     val jmax: Int,        // jmin..1024
     val s1: Int,          // 0..64
     val s2: Int,          // 0..64
@@ -19,15 +19,18 @@ data class Genome(
     val h2: Long,         // 0..4_294_967_295, != h1
     val h3: Long,         // 0..4_294_967_295, != h1, != h2
     val h4: Long,         // 0..4_294_967_295, != h1, != h2, != h3
-    val mtu: Int = 1360,  // 1280..1420
-    val dns: String = "1.1.1.1, 1.0.0.1",
+    val i1: String? = null,
+    val sni: String? = null,
+    val endpoint: String? = null,
+    val mtu: Int = 1280,  // 1280..1420
+    val dns: String = "111.88.96.50, 111.88.96.51",
     var fitness: Double = 0.0,
     var avgPingMs: Long = 0L,
     var successRate: Double = 0.0,
     var generation: Int = 0
 ) {
     /**
-     * Applies this genome's obfuscation parameters and evolved DNS onto a base configuration template.
+     * Applies this genome's obfuscation parameters, noise payload, SNI, and evolved DNS onto a base configuration template.
      */
     fun applyToConfig(base: AwgConfig): AwgConfig {
         return base.copy(
@@ -44,6 +47,9 @@ data class Genome(
             h2 = h2,
             h3 = h3,
             h4 = h4,
+            i1 = i1 ?: base.i1,
+            sni = sni ?: base.sni,
+            endpoint = endpoint ?: base.endpoint,
             mtu = mtu,
             dns = dns.ifBlank { base.dns },
             lastPingMs = avgPingMs,
@@ -57,7 +63,7 @@ data class Genome(
      * - H1 != H2 != H3 != H4
      */
     fun validated(): Genome {
-        var validJmin = jmin.coerceIn(64, 1024)
+        var validJmin = jmin.coerceIn(32, 1024)
         var validJmax = jmax.coerceIn(validJmin, 1024)
         val validJc = jc.coerceIn(0, 10)
         val validS1 = s1.coerceIn(0, 64)
@@ -65,7 +71,7 @@ data class Genome(
         val validS3 = s3.coerceIn(0, 64)
         val validS4 = s4.coerceIn(0, 32)
         val validMtu = mtu.coerceIn(1280, 1420)
-        val validDns = dns.ifBlank { "1.1.1.1, 1.0.0.1" }
+        val validDns = dns.ifBlank { "111.88.96.50, 111.88.96.51" }
 
         var newH1 = h1.coerceIn(1L, 4294967295L)
         var newH2 = h2.coerceIn(1L, 4294967295L)

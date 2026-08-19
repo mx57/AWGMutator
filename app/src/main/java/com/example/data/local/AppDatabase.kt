@@ -9,7 +9,7 @@ import com.example.data.local.entity.EvolutionLogEntity
 
 @Database(
     entities = [ConfigEntity::class, EvolutionLogEntity::class],
-    version = 1,
+    version = 2,
     exportSchema = false
 )
 abstract class AppDatabase : RoomDatabase() {

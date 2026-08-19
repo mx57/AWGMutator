@@ -5,8 +5,11 @@ import androidx.lifecycle.viewModelScope
 import com.example.App
 import com.example.domain.model.AwgConfig
 import com.example.domain.model.BlockedServicesCatalog
+import com.example.domain.model.DnsCatalog
+import com.example.domain.model.EvolutionSettings
 import com.example.domain.model.Genome
 import com.example.domain.model.ServiceCategory
+import com.example.domain.model.SniCatalog
 import com.example.domain.repository.ConfigRepository
 import com.example.evolution.EvolutionProgress
 import kotlinx.coroutines.Dispatchers
@@ -30,7 +33,23 @@ data class EvolutionScreenState(
     val targetProfile: EvolutionTargetProfile = EvolutionTargetProfile.ALL_BLOCKED_PLATFORMS,
     val populationSize: Int = 8,
     val maxGenerations: Int = 10,
-    val userMessage: String? = null
+    val userMessage: String? = null,
+    val evolutionSettings: EvolutionSettings = EvolutionSettings(
+        mutateJc = true,
+        mutateJminJmax = true,
+        mutateS1S2 = true,
+        mutateS3S4 = true,
+        mutateHeadersH1H4 = true,
+        mutatePayloadNoiseI1 = true,
+        mutateMtu = true,
+        mutateDns = true,
+        mutateEndpoints = true,
+        mutateSni = true,
+        selectedDnsIds = setOf("cu_uncensored", "cf_standard", "google", "quad9_unfiltered", "adguard_unfiltered")
+    ),
+    val showSettingsDialog: Boolean = false,
+    val showDnsSelectionDialog: Boolean = false,
+    val showSniSelectionDialog: Boolean = false
 )
 
 class EvolutionViewModel(
@@ -63,6 +82,48 @@ class EvolutionViewModel(
         _screenState.value = _screenState.value.copy(maxGenerations = gens.coerceIn(2, 30))
     }
 
+    fun toggleSettingDialog(show: Boolean) {
+        _screenState.value = _screenState.value.copy(showSettingsDialog = show)
+    }
+
+    fun toggleDnsDialog(show: Boolean) {
+        _screenState.value = _screenState.value.copy(showDnsSelectionDialog = show)
+    }
+
+    fun toggleSniDialog(show: Boolean) {
+        _screenState.value = _screenState.value.copy(showSniSelectionDialog = show)
+    }
+
+    fun toggleDnsSelection(dnsId: String) {
+        val current = _screenState.value.evolutionSettings.selectedDnsIds.toMutableSet()
+        if (current.contains(dnsId)) {
+            current.remove(dnsId)
+        } else {
+            current.add(dnsId)
+        }
+        _screenState.value = _screenState.value.copy(
+            evolutionSettings = _screenState.value.evolutionSettings.copy(selectedDnsIds = current)
+        )
+    }
+
+    fun toggleSniSelection(sniId: String) {
+        val current = _screenState.value.evolutionSettings.selectedSniIds.toMutableSet()
+        if (current.contains(sniId)) {
+            current.remove(sniId)
+        } else {
+            current.add(sniId)
+        }
+        _screenState.value = _screenState.value.copy(
+            evolutionSettings = _screenState.value.evolutionSettings.copy(selectedSniIds = current)
+        )
+    }
+
+    fun updateEvolutionSettings(transform: (EvolutionSettings) -> EvolutionSettings) {
+        _screenState.value = _screenState.value.copy(
+            evolutionSettings = transform(_screenState.value.evolutionSettings)
+        )
+    }
+
     fun startEvolution() {
         val baseConfig = _screenState.value.selectedBaseConfig ?: configs.value.firstOrNull()
         if (baseConfig == null) {
@@ -88,7 +149,8 @@ class EvolutionViewModel(
                 baseConfig = baseConfig,
                 populationSize = _screenState.value.populationSize,
                 maxGenerations = _screenState.value.maxGenerations,
-                targetUrls = targetUrls
+                targetUrls = targetUrls,
+                settings = _screenState.value.evolutionSettings
             )
         }
     }
