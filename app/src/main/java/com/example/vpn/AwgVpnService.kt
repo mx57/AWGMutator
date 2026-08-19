@@ -18,6 +18,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import java.net.DatagramSocket
 import java.net.InetAddress
 import java.net.Socket
@@ -156,20 +157,9 @@ class AwgVpnService : VpnService() {
             vpnInterface = builder.establish()
 
             if (vpnInterface != null) {
-                updateNotification("Connected: ${config.name} [Anti-DPI Active]")
-                val connectTime = System.currentTimeMillis()
+                updateNotification("Verifying connection to ${config.name}...")
 
-                App.instance.tunnelManager.updateStatus(
-                    VpnStatus(
-                        state = VpnState.CONNECTED,
-                        activeConfigName = config.name,
-                        activeConfigId = config.id,
-                        endpoint = config.endpoint,
-                        connectedSince = connectTime
-                    )
-                )
-
-                // Start real User-space packet router
+                // Start real User-space packet router first
                 packetRouter?.stop()
                 packetRouter = TunPacketRouter(
                     vpnService = this,
@@ -180,6 +170,25 @@ class AwgVpnService : VpnService() {
                     }
                 )
                 packetRouter?.start()
+
+                // Perform ping/handshake verification in background before marking CONNECTED
+                serviceScope.launch {
+                    val pingResult = App.instance.pingTester.testEndpoint(config.endpoint)
+                    if (pingResult.isReachable) {
+                        updateNotification("Connected: ${config.name} [Anti-DPI Active]")
+                        App.instance.tunnelManager.updateStatus(
+                            VpnStatus(
+                                state = VpnState.CONNECTED,
+                                activeConfigName = config.name,
+                                activeConfigId = config.id,
+                                endpoint = config.endpoint,
+                                connectedSince = System.currentTimeMillis()
+                            )
+                        )
+                    } else {
+                        stopTunnel("Endpoint unreachable: ${pingResult.error ?: "No response from peer"}")
+                    }
+                }
 
             } else {
                 stopTunnel("Failed to establish TUN interface")

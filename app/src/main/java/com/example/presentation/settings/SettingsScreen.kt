@@ -18,8 +18,9 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.AltRoute
+import androidx.compose.material.icons.automirrored.filled.AltRoute
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.DeveloperMode
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
@@ -37,6 +38,8 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.RadioButtonDefaults
 import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -98,6 +101,48 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(14.dp))
 
+        // Root Tunneling Settings Card
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(14.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+        ) {
+            Column(modifier = Modifier.padding(14.dp)) {
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                        Icon(Icons.Default.DeveloperMode, contentDescription = null, tint = CyberCyan)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Column {
+                            Text(
+                                text = "Root Tunnel Mode",
+                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                            )
+                            Text(
+                                text = if (uiState.isRootDeviceAvailable) "SU Access Available" else "No Root / SU Access detected",
+                                style = MaterialTheme.typography.labelSmall,
+                                color = if (uiState.isRootDeviceAvailable) NeonGreen else MaterialTheme.colorScheme.error
+                            )
+                        }
+                    }
+                    Switch(
+                        checked = uiState.isRootModeEnabled,
+                        onCheckedChange = { viewModel.setRootModeEnabled(it) },
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = CyberCyan,
+                            checkedTrackColor = CyberPurple
+                        )
+                    )
+                }
+            }
+        }
+
+        Spacer(modifier = Modifier.height(14.dp))
+
         // Split Tunneling Mode Card
         Card(
             modifier = Modifier.fillMaxWidth(),
@@ -107,7 +152,7 @@ fun SettingsScreen(
         ) {
             Column(modifier = Modifier.padding(14.dp)) {
                 Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.Default.AltRoute, contentDescription = null, tint = CyberCyan)
+                    Icon(Icons.AutoMirrored.Filled.AltRoute, contentDescription = null, tint = CyberCyan)
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
                         text = "Split Tunneling Mode",

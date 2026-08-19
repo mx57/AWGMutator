@@ -19,18 +19,22 @@ data class SettingsUiState(
     val selectedPackages: Set<String> = emptySet(),
     val isLoadingApps: Boolean = false,
     val searchQuery: String = "",
+    val isRootModeEnabled: Boolean = false,
+    val isRootDeviceAvailable: Boolean = false,
     val pingTargets: List<String> = emptyList(),
     val userMessage: String? = null
 )
 
 class SettingsViewModel(
-    private val splitManager: SplitTunnelManager = App.instance.splitTunnelManager
+    private val splitManager: SplitTunnelManager = App.instance.splitTunnelManager,
+    private val rootTunnelManager: com.example.vpn.RootTunnelManager = App.instance.rootTunnelManager
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(
         SettingsUiState(
             splitMode = splitManager.mode,
             selectedPackages = splitManager.getSelectedPackages(),
+            isRootModeEnabled = rootTunnelManager.isRootModeEnabled,
             pingTargets = App.instance.pingTester.defaultTargets
         )
     )
@@ -38,6 +42,19 @@ class SettingsViewModel(
 
     init {
         loadInstalledApps()
+        checkRootAvailability()
+    }
+
+    private fun checkRootAvailability() {
+        viewModelScope.launch {
+            val available = com.example.util.RootRunner.isRootAvailable()
+            _uiState.value = _uiState.value.copy(isRootDeviceAvailable = available)
+        }
+    }
+
+    fun setRootModeEnabled(enabled: Boolean) {
+        rootTunnelManager.isRootModeEnabled = enabled
+        _uiState.value = _uiState.value.copy(isRootModeEnabled = enabled)
     }
 
     fun loadInstalledApps() {
