@@ -205,15 +205,20 @@ class CloudflareApi(
                     val peerPublicKey = peerObj?.optJSONObject("public_key")?.optString("key", "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=")
                         ?: "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo="
                     val endpointObj = peerObj?.optJSONObject("endpoint")
-                    val rawEndpointV4 = endpointObj?.optString("v4", "162.159.192.13:1074") ?: "162.159.192.13:1074"
-                    val endpointV6 = endpointObj?.optString("v6", "[2606:4700:d0::a29f:c001]:1074") ?: "[2606:4700:d0::a29f:c001]:1074"
+                    val rawEndpointV4 = endpointObj?.optString("v4")
+                    val hostEndpoint = endpointObj?.optString("host")
+                    val rawEndpointV6 = endpointObj?.optString("v6")
 
-                    // Use tested bypass endpoint port if default port is returned
-                    val endpointV4 = if (rawEndpointV4.endsWith(":2408")) {
-                        rawEndpointV4.substringBefore(":") + ":1074"
-                    } else {
-                        rawEndpointV4
+                    val chosenV4 = when {
+                        !rawEndpointV4.isNullOrBlank() -> rawEndpointV4
+                        !hostEndpoint.isNullOrBlank() -> hostEndpoint
+                        else -> "162.159.192.13:1074"
                     }
+                    val endpointV4 = com.example.domain.model.AwgConfig.sanitizeEndpoint(chosenV4, defaultPort = 1074)
+                    val endpointV6 = com.example.domain.model.AwgConfig.sanitizeEndpoint(
+                        if (!rawEndpointV6.isNullOrBlank()) rawEndpointV6 else "[2606:4700:d0::a29f:c001]",
+                        defaultPort = 1074
+                    )
 
                     val reservedBytes = ByteArray(3).apply { Random().nextBytes(this) }
                     val reservedBase64 = Base64.encodeToString(reservedBytes, Base64.NO_WRAP)

@@ -38,12 +38,13 @@ data class EvolutionScreenState(
         mutateJminJmax = true,
         mutateS1S2 = true,
         mutateS3S4 = true,
-        mutateHeadersH1H4 = true,
+        mutateHeadersH1H4 = false,
         mutatePayloadNoiseI1 = true,
         mutateMtu = true,
         mutateDns = true,
-        mutateEndpoints = true,
+        mutateEndpoints = false,
         mutateSni = true,
+        preserveServerKeys = true,
         selectedDnsIds = setOf("cu_uncensored", "cf_standard", "google", "quad9_unfiltered", "adguard_unfiltered")
     ),
     val showSettingsDialog: Boolean = false,
@@ -171,10 +172,13 @@ class EvolutionViewModel(
     }
 
     fun applyEvolvedConfig(genome: Genome) {
-        val base = _screenState.value.selectedBaseConfig ?: configs.value.firstOrNull() ?: AwgConfig(
-            name = "Evolved AWG",
-            privateKey = "a".repeat(43) + "="
-        )
+        val base = _screenState.value.selectedBaseConfig ?: configs.value.firstOrNull()
+        if (base == null) {
+            _screenState.value = _screenState.value.copy(
+                userMessage = "Error: No base configuration available to apply evolved genes."
+            )
+            return
+        }
         val evolvedConfig = genome.applyToConfig(base)
         viewModelScope.launch(Dispatchers.IO) {
             configRepository.saveConfig(evolvedConfig)
@@ -188,10 +192,13 @@ class EvolutionViewModel(
     }
 
     fun saveEvolvedConfig(genome: Genome) {
-        val base = _screenState.value.selectedBaseConfig ?: configs.value.firstOrNull() ?: AwgConfig(
-            name = "Evolved AWG",
-            privateKey = "a".repeat(43) + "="
-        )
+        val base = _screenState.value.selectedBaseConfig ?: configs.value.firstOrNull()
+        if (base == null) {
+            _screenState.value = _screenState.value.copy(
+                userMessage = "Error: No base configuration available to save."
+            )
+            return
+        }
         val evolvedConfig = genome.applyToConfig(base)
         viewModelScope.launch(Dispatchers.IO) {
             configRepository.saveConfig(evolvedConfig)

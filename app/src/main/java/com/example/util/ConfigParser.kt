@@ -113,6 +113,8 @@ object ConfigParser {
 
             val isWarp = !reserved.isNullOrBlank() || endpoint.contains("162.159.") || endpoint.contains("188.114.")
 
+            val sanitizedEndpoint = AwgConfig.sanitizeEndpoint(endpoint, defaultPort = 1074)
+
             AwgConfig(
                 id = UUID.randomUUID().toString(),
                 name = defaultName,
@@ -139,7 +141,7 @@ object ConfigParser {
                 peerPublicKey = peerPublicKey,
                 presharedKey = presharedKey,
                 allowedIps = allowedIps,
-                endpoint = endpoint,
+                endpoint = sanitizedEndpoint,
                 persistentKeepalive = persistentKeepalive,
                 isWarp = isWarp,
                 reserved = reserved,

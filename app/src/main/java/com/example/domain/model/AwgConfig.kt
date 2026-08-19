@@ -107,11 +107,87 @@ data class AwgConfig(
             builder.appendLine("PresharedKey = $presharedKey")
         }
         builder.appendLine("AllowedIPs = $allowedIps")
-        builder.appendLine("Endpoint = $endpoint")
+        val cleanEndpoint = sanitizeEndpoint(endpoint)
+        builder.appendLine("Endpoint = $cleanEndpoint")
         if (persistentKeepalive > 0) {
             builder.appendLine("PersistentKeepalive = $persistentKeepalive")
         }
 
         return builder.toString()
+    }
+
+    /**
+     * Converts configuration into clean standard WireGuard format for native GoBackend parsing.
+     */
+    fun toCleanWgQuickString(): String {
+        val builder = StringBuilder()
+        builder.appendLine("[Interface]")
+        builder.appendLine("PrivateKey = $privateKey")
+        val cleanAddr = address.split(",")
+            .map { it.trim() }
+            .filter { it.isNotBlank() }
+            .map { addr ->
+                val pure = addr.substringBefore("/").trim()
+                val prefix = if (addr.contains("/")) addr.substringAfter("/") else if (pure.contains(":")) "128" else "32"
+                "$pure/$prefix"
+            }.joinToString(", ")
+        if (cleanAddr.isNotBlank()) {
+            builder.appendLine("Address = $cleanAddr")
+        }
+        if (dns.isNotBlank()) {
+            builder.appendLine("DNS = $dns")
+        }
+        val effectiveMtu = if (mtu in 1280..1420) mtu else 1280
+        builder.appendLine("MTU = $effectiveMtu")
+
+        builder.appendLine()
+        builder.appendLine("[Peer]")
+        builder.appendLine("PublicKey = $peerPublicKey")
+        if (!presharedKey.isNullOrBlank()) {
+            builder.appendLine("PresharedKey = $presharedKey")
+        }
+        val cleanAllowed = if (allowedIps.isNotBlank()) allowedIps else "0.0.0.0/0, ::/0"
+        builder.appendLine("AllowedIPs = $cleanAllowed")
+        val cleanEndpoint = sanitizeEndpoint(endpoint)
+        builder.appendLine("Endpoint = $cleanEndpoint")
+        if (persistentKeepalive > 0) {
+            builder.appendLine("PersistentKeepalive = $persistentKeepalive")
+        }
+
+        return builder.toString()
+    }
+
+    companion object {
+        fun sanitizeEndpoint(raw: String?, defaultPort: Int = 1074): String {
+            val trimmed = raw?.trim().orEmpty()
+            if (trimmed.isBlank()) return "162.159.192.13:$defaultPort"
+
+            // Check if IPv6 format: [2606:...]:port or [2606:...]
+            if (trimmed.startsWith("[")) {
+                val closeBracket = trimmed.indexOf(']')
+                if (closeBracket != -1) {
+                    val ip = trimmed.substring(0, closeBracket + 1)
+                    val after = trimmed.substring(closeBracket + 1).trim()
+                    val port = if (after.startsWith(":")) after.substring(1).toIntOrNull() else null
+                    val validPort = if (port != null && port > 0) port else defaultPort
+                    return "$ip:$validPort"
+                }
+            }
+
+            // For IPv4 or host: e.g. 162.159.192.7 or 162.159.192.7:0 or 162.159.192.7:1074
+            if (trimmed.count { it == ':' } == 1) {
+                val ipOrHost = trimmed.substringBefore(":")
+                val portStr = trimmed.substringAfter(":")
+                val port = portStr.toIntOrNull()
+                val validPort = if (port != null && port > 0) port else defaultPort
+                return "$ipOrHost:$validPort"
+            } else if (!trimmed.contains(":")) {
+                // Plain IPv4 or hostname with no port
+                return "$trimmed:$defaultPort"
+            }
+
+            // Raw IPv6 without brackets
+            return "[$trimmed]:$defaultPort"
+        }
     }
 }

@@ -25,6 +25,8 @@ import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.Icon
@@ -41,6 +43,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.testTag
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
@@ -49,6 +53,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.domain.model.AppConnectionStatus
 import com.example.domain.model.AppTrafficStat
+import com.example.vpn.AppTrafficTracker
 import com.example.ui.theme.CyberCyan
 import com.example.ui.theme.CyberPurple
 import com.example.ui.theme.DangerRed
@@ -125,6 +130,52 @@ fun AppTrafficDashboardCard(
 
             Spacer(modifier = Modifier.height(10.dp))
 
+            val context = LocalContext.current
+            var hasPermission by remember { mutableStateOf(AppTrafficTracker.hasUsageStatsPermission(context)) }
+
+            androidx.compose.runtime.LaunchedEffect(Unit) {
+                hasPermission = AppTrafficTracker.hasUsageStatsPermission(context)
+            }
+
+            if (!hasPermission) {
+                Surface(
+                    shape = RoundedCornerShape(10.dp),
+                    color = WarningAmber.copy(alpha = 0.12f),
+                    border = BorderStroke(1.dp, WarningAmber.copy(alpha = 0.4f)),
+                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                ) {
+                    Row(
+                        modifier = Modifier.padding(10.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Column(modifier = Modifier.weight(1f)) {
+                            Text(
+                                text = "Доступ к статистике использования",
+                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                color = WarningAmber
+                            )
+                            Text(
+                                text = "Предоставьте доступ для детального подсчета трафика по приложениям.",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant
+                            )
+                        }
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Button(
+                            onClick = {
+                                AppTrafficTracker.openUsageAccessSettings(context)
+                                hasPermission = AppTrafficTracker.hasUsageStatsPermission(context)
+                            },
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = WarningAmber)
+                        ) {
+                            Text("Разрешить", color = Color.Black, style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold))
+                        }
+                    }
+                }
+            }
+
             if (appStats.isEmpty()) {
                 Surface(
                     shape = RoundedCornerShape(8.dp),
@@ -132,7 +183,7 @@ fun AppTrafficDashboardCard(
                     modifier = Modifier.fillMaxWidth()
                 ) {
                     Text(
-                        text = "No active application traffic detected yet. Connect VPN to begin live telemetry.",
+                        text = "Приложения с расходом трафика (> 0 KB) пока не зафиксированы. Трафик отобразится автоматически при сетевой активности.",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.padding(12.dp)

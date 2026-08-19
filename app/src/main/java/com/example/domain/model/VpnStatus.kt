@@ -24,5 +24,6 @@ data class VpnStatus(
     val egressIp: String? = null,
     val egressCountry: String? = null,
     val isEgressVerified: Boolean = false,
+    val isWarpActive: Boolean = false,
     val errorMessage: String? = null
 )
