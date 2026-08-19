@@ -212,12 +212,12 @@ class CloudflareApi(
                     val chosenV4 = when {
                         !rawEndpointV4.isNullOrBlank() -> rawEndpointV4
                         !hostEndpoint.isNullOrBlank() -> hostEndpoint
-                        else -> "162.159.192.13:1074"
+                        else -> "188.114.97.1:854"
                     }
-                    val endpointV4 = com.example.domain.model.AwgConfig.sanitizeEndpoint(chosenV4, defaultPort = 1074)
+                    val endpointV4 = com.example.domain.model.AwgConfig.sanitizeEndpoint(chosenV4, defaultPort = 854)
                     val endpointV6 = com.example.domain.model.AwgConfig.sanitizeEndpoint(
                         if (!rawEndpointV6.isNullOrBlank()) rawEndpointV6 else "[2606:4700:d0::a29f:c001]",
-                        defaultPort = 1074
+                        defaultPort = 854
                     )
 
                     val reservedBytes = ByteArray(3).apply { Random().nextBytes(this) }

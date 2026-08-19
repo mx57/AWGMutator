@@ -34,7 +34,7 @@ data class AwgConfig(
     val peerPublicKey: String = "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=",
     val presharedKey: String? = null,
     val allowedIps: String = "0.0.0.0/0, ::/0",
-    val endpoint: String = "162.159.192.13:1074",
+    val endpoint: String = "188.114.97.1:854",
     val persistentKeepalive: Int = 25,
     val isWarp: Boolean = false,
     val reserved: String? = null,
@@ -179,9 +179,9 @@ data class AwgConfig(
     }
 
     companion object {
-        fun sanitizeEndpoint(raw: String?, defaultPort: Int = 1074): String {
+        fun sanitizeEndpoint(raw: String?, defaultPort: Int = 854): String {
             val trimmed = raw?.trim().orEmpty()
-            if (trimmed.isBlank()) return "162.159.192.13:$defaultPort"
+            if (trimmed.isBlank()) return "188.114.97.1:$defaultPort"
 
             // Check if IPv6 format: [2606:...]:port or [2606:...]
             if (trimmed.startsWith("[")) {

@@ -27,7 +27,7 @@ class GenerateAwgConfigUseCase(
 
     suspend operator fun invoke(
         name: String = "AmneziaWG Custom",
-        endpoint: String = "162.159.192.13:1074",
+        endpoint: String = "188.114.97.1:854",
         peerPublicKey: String = "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=",
         presharedKey: String? = null,
         address: String = "172.16.0.2/32",
