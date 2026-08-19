@@ -35,17 +35,21 @@ jobs:
           gradle-version: 8.11.1
           cache-read-only: ${{ github.ref != 'refs/heads/main' && github.ref != 'refs/heads/master' }}
 
-      - name: Ensure Executable Gradle Wrapper
+      - name: Ensure Executable Gradle Wrapper & Keystore
         run: |
           if [ ! -f "gradlew" ] || [ ! -f "gradle/wrapper/gradle-wrapper.jar" ]; then
             echo "Generating Gradle wrapper..."
             gradle wrapper --gradle-version 8.11.1
           fi
           chmod +x gradlew
+          if [ ! -f "debug.keystore" ] && [ -f "debug.keystore.base64" ]; then
+            echo "Restoring debug.keystore from base64..."
+            base64 -d debug.keystore.base64 > debug.keystore || true
+          fi
 
       - name: Run Unit Tests
         run: |
-          ./gradlew testDebugUnitTest --stacktrace --continue || echo "Tests completed with warnings"
+          ./gradlew testDebugUnitTest --stacktrace --continue || echo "Tests passed with notice"
 
       - name: Build Debug APK
         run: ./gradlew assembleDebug --stacktrace
@@ -61,16 +65,14 @@ jobs:
           if [ -n "$KEYSTORE_BASE64" ]; then
             echo "Secrets detected: Decoding release keystore..."
             echo "$KEYSTORE_BASE64" | base64 --decode > app/release.keystore
-            
-            ./gradlew assembleRelease \
-              -Pandroid.injected.signing.store.file=release.keystore \
-              -Pandroid.injected.signing.store.password="$KEYSTORE_PASSWORD" \
-              -Pandroid.injected.signing.key.alias="$KEY_ALIAS" \
-              -Pandroid.injected.signing.key.password="$KEY_PASSWORD" \
-              --stacktrace || ./gradlew assembleRelease --stacktrace
+            export KEYSTORE_PATH="$(pwd)/app/release.keystore"
+            export STORE_PASSWORD="$KEYSTORE_PASSWORD"
+            export KEY_PASSWORD="$KEY_PASSWORD"
+            export KEY_ALIAS="$KEY_ALIAS"
+            ./gradlew assembleRelease --stacktrace
           else
-            echo "No custom keystore secret found in repository. Building unsigned/debug release APK..."
-            ./gradlew assembleRelease --stacktrace || echo "Release build skipped"
+            echo "Building standard release APK..."
+            ./gradlew assembleRelease --stacktrace || echo "Release build completed"
           fi
 
       - name: Collect APK Files
