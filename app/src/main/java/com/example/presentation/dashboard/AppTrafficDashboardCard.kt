@@ -2,7 +2,6 @@ package com.example.presentation.dashboard
 
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -22,7 +21,6 @@ import androidx.compose.material.icons.filled.ArrowUpward
 import androidx.compose.material.icons.filled.DataUsage
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
-import androidx.compose.material.icons.filled.Public
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material3.Button
@@ -34,6 +32,8 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Switch
+import androidx.compose.material3.SwitchDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
@@ -53,28 +53,32 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.example.domain.model.AppConnectionStatus
 import com.example.domain.model.AppTrafficStat
+import com.example.domain.model.VpnState
+import com.example.domain.model.VpnStatus
 import com.example.vpn.AppTrafficTracker
 import com.example.ui.theme.CyberCyan
-import com.example.ui.theme.CyberPurple
 import com.example.ui.theme.DangerRed
 import com.example.ui.theme.NeonGreen
 import com.example.ui.theme.WarningAmber
 
 /**
- * Interactive card displaying per-application traffic telemetry (download/upload speed, total volume)
- * and active network connection status through the current VPN configuration.
+ * Interactive card displaying per-application traffic telemetry passing strictly through the active VPN tunnel.
+ * If the tunnel is not connected or no data passes through it, no apps are shown.
+ * Features a toggle to completely turn traffic monitoring on/off.
  */
 @Composable
 fun AppTrafficDashboardCard(
+    vpnStatus: VpnStatus,
     appStats: List<AppTrafficStat>,
+    isMonitoringEnabled: Boolean,
+    onToggleMonitoring: (Boolean) -> Unit,
     onOpenSplitTunnelSettings: () -> Unit,
     modifier: Modifier = Modifier
 ) {
     var isExpanded by remember { mutableStateOf(false) }
 
-    val activeCount = appStats.count { it.connectionStatus == AppConnectionStatus.ROUTED_VIA_VPN }
-    val directCount = appStats.count { it.connectionStatus == AppConnectionStatus.BYPASS_DIRECT }
-    val displayApps = if (isExpanded) appStats.take(15) else appStats.take(4)
+    val isVpnConnected = vpnStatus.state == VpnState.CONNECTED
+    val displayApps = if (isExpanded) appStats.take(20) else appStats.take(5)
 
     Card(
         modifier = modifier.fillMaxWidth(),
@@ -83,116 +87,187 @@ fun AppTrafficDashboardCard(
         border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
     ) {
         Column(modifier = Modifier.padding(14.dp)) {
-            // Header Row
+            // Header Row: Icon, Title, Switch & Expand/Collapse
             Row(
                 modifier = Modifier.fillMaxWidth(),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
                     Surface(
                         shape = RoundedCornerShape(8.dp),
-                        color = CyberCyan.copy(alpha = 0.15f)
+                        color = if (isMonitoringEnabled && isVpnConnected) CyberCyan.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surface
                     ) {
                         Icon(
                             imageVector = Icons.Default.DataUsage,
                             contentDescription = null,
-                            tint = CyberCyan,
+                            tint = if (isMonitoringEnabled && isVpnConnected) CyberCyan else MaterialTheme.colorScheme.onSurfaceVariant,
                             modifier = Modifier.padding(6.dp).size(20.dp)
                         )
                     }
                     Spacer(modifier = Modifier.width(10.dp))
                     Column {
                         Text(
-                            text = "📊 App Traffic & Connection Status",
+                            text = "📊 Трафик приложений в туннеле",
                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = "$activeCount through Config • $directCount Direct Bypass",
+                            text = if (!isMonitoringEnabled) {
+                                "Мониторинг выключен"
+                            } else if (!isVpnConnected) {
+                                "VPN отключен • Ожидание подключения"
+                            } else if (appStats.isEmpty()) {
+                                "Трафик через туннель: 0 KB"
+                            } else {
+                                "${appStats.size} прилож. активны через туннель"
+                            },
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant
                         )
                     }
                 }
 
-                IconButton(
-                    onClick = { isExpanded = !isExpanded },
-                    modifier = Modifier.size(32.dp).testTag("toggle_app_traffic_expand")
-                ) {
-                    Icon(
-                        imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
-                        contentDescription = "Expand",
-                        tint = CyberCyan
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Switch(
+                        checked = isMonitoringEnabled,
+                        onCheckedChange = onToggleMonitoring,
+                        colors = SwitchDefaults.colors(
+                            checkedThumbColor = Color.Black,
+                            checkedTrackColor = CyberCyan,
+                            uncheckedThumbColor = MaterialTheme.colorScheme.outline,
+                            uncheckedTrackColor = MaterialTheme.colorScheme.surface
+                        ),
+                        modifier = Modifier.testTag("toggle_traffic_monitoring_switch")
                     )
-                }
-            }
 
-            Spacer(modifier = Modifier.height(10.dp))
-
-            val context = LocalContext.current
-            var hasPermission by remember { mutableStateOf(AppTrafficTracker.hasUsageStatsPermission(context)) }
-
-            androidx.compose.runtime.LaunchedEffect(Unit) {
-                hasPermission = AppTrafficTracker.hasUsageStatsPermission(context)
-            }
-
-            if (!hasPermission) {
-                Surface(
-                    shape = RoundedCornerShape(10.dp),
-                    color = WarningAmber.copy(alpha = 0.12f),
-                    border = BorderStroke(1.dp, WarningAmber.copy(alpha = 0.4f)),
-                    modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
-                ) {
-                    Row(
-                        modifier = Modifier.padding(10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = "Доступ к статистике использования",
-                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                                color = WarningAmber
-                            )
-                            Text(
-                                text = "Предоставьте доступ для детального подсчета трафика по приложениям.",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Button(
-                            onClick = {
-                                AppTrafficTracker.openUsageAccessSettings(context)
-                                hasPermission = AppTrafficTracker.hasUsageStatsPermission(context)
-                            },
-                            shape = RoundedCornerShape(8.dp),
-                            colors = ButtonDefaults.buttonColors(containerColor = WarningAmber)
+                    if (isMonitoringEnabled && appStats.isNotEmpty()) {
+                        IconButton(
+                            onClick = { isExpanded = !isExpanded },
+                            modifier = Modifier.size(32.dp).testTag("toggle_app_traffic_expand")
                         ) {
-                            Text("Разрешить", color = Color.Black, style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold))
+                            Icon(
+                                imageVector = if (isExpanded) Icons.Default.KeyboardArrowUp else Icons.Default.KeyboardArrowDown,
+                                contentDescription = "Развернуть",
+                                tint = CyberCyan
+                            )
                         }
                     }
                 }
             }
 
-            if (appStats.isEmpty()) {
+            Spacer(modifier = Modifier.height(10.dp))
+
+            if (!isMonitoringEnabled) {
+                // Card when monitoring is disabled
                 Surface(
-                    shape = RoundedCornerShape(8.dp),
+                    shape = RoundedCornerShape(10.dp),
                     color = MaterialTheme.colorScheme.surface,
                     modifier = Modifier.fillMaxWidth()
                 ) {
-                    Text(
-                        text = "Приложения с расходом трафика (> 0 KB) пока не зафиксированы. Трафик отобразится автоматически при сетевой активности.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(12.dp)
-                    )
+                    Row(
+                        modifier = Modifier.padding(12.dp),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            text = "Мониторинг трафика выключен для экономии заряда батареи.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.weight(1f)
+                        )
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Button(
+                            onClick = { onToggleMonitoring(true) },
+                            shape = RoundedCornerShape(8.dp),
+                            colors = ButtonDefaults.buttonColors(containerColor = CyberCyan)
+                        ) {
+                            Text("Включить", color = Color.Black, style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold))
+                        }
+                    }
                 }
             } else {
-                Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                    displayApps.forEach { stat ->
-                        AppTrafficItemRow(stat = stat)
+                // Check usage stats permission
+                val context = LocalContext.current
+                var hasPermission by remember { mutableStateOf(AppTrafficTracker.hasUsageStatsPermission(context)) }
+
+                androidx.compose.runtime.LaunchedEffect(Unit) {
+                    hasPermission = AppTrafficTracker.hasUsageStatsPermission(context)
+                }
+
+                if (!hasPermission) {
+                    Surface(
+                        shape = RoundedCornerShape(10.dp),
+                        color = WarningAmber.copy(alpha = 0.12f),
+                        border = BorderStroke(1.dp, WarningAmber.copy(alpha = 0.4f)),
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 8.dp)
+                    ) {
+                        Row(
+                            modifier = Modifier.padding(10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.SpaceBetween
+                        ) {
+                            Column(modifier = Modifier.weight(1f)) {
+                                Text(
+                                    text = "Доступ к статистике использования",
+                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                    color = WarningAmber
+                                )
+                                Text(
+                                    text = "Предоставьте доступ для точного подсчета трафика приложений через туннель.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                                )
+                            }
+                            Spacer(modifier = Modifier.width(8.dp))
+                            Button(
+                                onClick = {
+                                    AppTrafficTracker.openUsageAccessSettings(context)
+                                    hasPermission = AppTrafficTracker.hasUsageStatsPermission(context)
+                                },
+                                shape = RoundedCornerShape(8.dp),
+                                colors = ButtonDefaults.buttonColors(containerColor = WarningAmber)
+                            ) {
+                                Text("Разрешить", color = Color.Black, style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold))
+                            }
+                        }
+                    }
+                }
+
+                if (!isVpnConnected) {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surface,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "VPN-туннель не активен. Статистика приложений отображается только при активном соединении и наличии трафика через туннель.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(12.dp)
+                        )
+                    }
+                } else if (appStats.isEmpty()) {
+                    Surface(
+                        shape = RoundedCornerShape(8.dp),
+                        color = MaterialTheme.colorScheme.surface,
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Text(
+                            text = "Через VPN-туннель пока не проходил трафик приложений (> 0 KB). Приложения появятся здесь автоматически при использовании сети.",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            modifier = Modifier.padding(12.dp)
+                        )
+                    }
+                } else {
+                    Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        displayApps.forEach { stat ->
+                            AppTrafficItemRow(stat = stat)
+                        }
                     }
                 }
             }
@@ -208,7 +283,7 @@ fun AppTrafficDashboardCard(
                 Icon(Icons.Default.Tune, contentDescription = null, tint = CyberCyan, modifier = Modifier.size(16.dp))
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
-                    text = "Configure Split Tunnel & App Routing",
+                    text = "Настроить раздельное туннелирование",
                     color = CyberCyan,
                     style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.SemiBold)
                 )
@@ -223,11 +298,7 @@ fun AppTrafficItemRow(
     modifier: Modifier = Modifier
 ) {
     val isRouted = stat.connectionStatus == AppConnectionStatus.ROUTED_VIA_VPN
-    val statusColor = when (stat.connectionStatus) {
-        AppConnectionStatus.ROUTED_VIA_VPN -> NeonGreen
-        AppConnectionStatus.BYPASS_DIRECT -> WarningAmber
-        AppConnectionStatus.BLOCKED -> DangerRed
-    }
+    val statusColor = if (isRouted) NeonGreen else WarningAmber
 
     Surface(
         modifier = modifier.fillMaxWidth(),
@@ -251,14 +322,14 @@ fun AppTrafficItemRow(
                     modifier = Modifier
                         .size(30.dp)
                         .clip(CircleShape)
-                        .background(if (isRouted) CyberCyan.copy(alpha = 0.2f) else MaterialTheme.colorScheme.surfaceVariant),
+                        .background(CyberCyan.copy(alpha = 0.2f)),
                     contentAlignment = Alignment.Center
                 ) {
                     Text(
                         text = stat.appName.take(1).uppercase(),
                         fontWeight = FontWeight.Bold,
                         style = MaterialTheme.typography.labelMedium,
-                        color = if (isRouted) CyberCyan else MaterialTheme.colorScheme.onSurfaceVariant
+                        color = CyberCyan
                     )
                 }
 
@@ -281,14 +352,14 @@ fun AppTrafficItemRow(
                                 verticalAlignment = Alignment.CenterVertically
                             ) {
                                 Icon(
-                                    imageVector = if (isRouted) Icons.Default.Security else Icons.Default.Public,
+                                    imageVector = Icons.Default.Security,
                                     contentDescription = null,
                                     tint = statusColor,
                                     modifier = Modifier.size(10.dp)
                                 )
                                 Spacer(modifier = Modifier.width(2.dp))
                                 Text(
-                                    text = if (isRouted) "Tunnel Config" else "Direct ISP",
+                                    text = "В туннеле VPN",
                                     style = MaterialTheme.typography.labelSmall.copy(
                                         fontSize = 9.sp,
                                         fontWeight = FontWeight.Bold
@@ -308,7 +379,7 @@ fun AppTrafficItemRow(
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Default.ArrowDownward, contentDescription = null, tint = NeonGreen, modifier = Modifier.size(11.dp))
                         Text(
-                            text = "${formatSpeed(stat.rxSpeedBytesPerSec)}/s",
+                            text = "${formatSpeed(stat.rxSpeedBytesPerSec)}/с",
                             style = MaterialTheme.typography.labelSmall.copy(
                                 fontSize = 10.sp,
                                 fontFamily = FontFamily.Monospace,
@@ -319,7 +390,7 @@ fun AppTrafficItemRow(
                         Spacer(modifier = Modifier.width(4.dp))
                         Icon(Icons.Default.ArrowUpward, contentDescription = null, tint = CyberCyan, modifier = Modifier.size(11.dp))
                         Text(
-                            text = "${formatSpeed(stat.txSpeedBytesPerSec)}/s",
+                            text = "${formatSpeed(stat.txSpeedBytesPerSec)}/с",
                             style = MaterialTheme.typography.labelSmall.copy(
                                 fontSize = 10.sp,
                                 fontFamily = FontFamily.Monospace,
@@ -332,7 +403,7 @@ fun AppTrafficItemRow(
 
                 // Total Session Volume
                 Text(
-                    text = "Total: ${formatTrafficBytes(stat.totalBytes)}",
+                    text = "Всего: ${formatTrafficBytes(stat.totalBytes)}",
                     style = MaterialTheme.typography.labelSmall.copy(
                         fontFamily = FontFamily.Monospace,
                         fontSize = 10.sp
@@ -345,19 +416,19 @@ fun AppTrafficItemRow(
 }
 
 private fun formatSpeed(bytesPerSec: Long): String {
-    if (bytesPerSec < 1024) return "$bytesPerSec B"
+    if (bytesPerSec < 1024) return "$bytesPerSec Б"
     val kb = bytesPerSec / 1024.0
-    if (kb < 1024) return "%.1f KB".format(kb)
+    if (kb < 1024) return "%.1f КБ".format(kb)
     val mb = kb / 1024.0
-    return "%.1f MB".format(mb)
+    return "%.1f МБ".format(mb)
 }
 
 private fun formatTrafficBytes(bytes: Long): String {
-    if (bytes < 1024) return "$bytes B"
+    if (bytes < 1024) return "$bytes Б"
     val kb = bytes / 1024.0
-    if (kb < 1024) return "%.1f KB".format(kb)
+    if (kb < 1024) return "%.1f КБ".format(kb)
     val mb = kb / 1024.0
-    if (mb < 1024) return "%.1f MB".format(mb)
+    if (mb < 1024) return "%.1f МБ".format(mb)
     val gb = mb / 1024.0
-    return "%.2f GB".format(gb)
+    return "%.2f ГБ".format(gb)
 }

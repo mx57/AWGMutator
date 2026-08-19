@@ -292,7 +292,7 @@ class ConfigsViewModel(
                 name = name.ifBlank { "Custom AWG" },
                 endpoint = endpoint.ifBlank { "162.159.192.13:1074" },
                 peerPublicKey = peerKey.ifBlank { "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=" },
-                dns = dns.ifBlank { "111.88.96.50, 111.88.96.51" },
+                dns = dns.ifBlank { "1.1.1.1, 8.8.8.8, 1.0.0.1" },
                 preset = preset,
                 customJc = jc,
                 customJmin = jmin,

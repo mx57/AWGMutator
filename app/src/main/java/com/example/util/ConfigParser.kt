@@ -17,7 +17,7 @@ object ConfigParser {
         return runCatching {
             var privateKey = ""
             var address = "172.16.0.2/32"
-            var dns = "111.88.96.50, 111.88.96.51"
+            var dns = "1.1.1.1, 8.8.8.8, 1.0.0.1"
             var mtu = 1280
             var jc = 0
             var jmin = 0

@@ -23,7 +23,7 @@ data class Genome(
     val sni: String? = null,
     val endpoint: String? = null,
     val mtu: Int = 1280,  // 1280..1420
-    val dns: String = "111.88.96.50, 111.88.96.51",
+    val dns: String = "1.1.1.1, 8.8.8.8, 1.0.0.1",
     var fitness: Double = 0.0,
     var avgPingMs: Long = 0L,
     var successRate: Double = 0.0,
@@ -74,7 +74,7 @@ data class Genome(
         val validS3 = s3.coerceIn(0, 64)
         val validS4 = s4.coerceIn(0, 32)
         val validMtu = mtu.coerceIn(1280, 1420)
-        val validDns = dns.ifBlank { "111.88.96.50, 111.88.96.51" }
+        val validDns = dns.ifBlank { "1.1.1.1, 8.8.8.8, 1.0.0.1" }
 
         var newH1 = h1.coerceIn(1L, 4294967295L)
         var newH2 = h2.coerceIn(1L, 4294967295L)

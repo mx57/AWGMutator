@@ -95,6 +95,7 @@ fun DashboardScreen(
     val configs by viewModel.configs.collectAsStateWithLifecycle()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val appStats by viewModel.appStats.collectAsStateWithLifecycle()
+    val isTrafficMonitoringEnabled by viewModel.isTrafficMonitoringEnabled.collectAsStateWithLifecycle()
     val tunnelLogs by viewModel.tunnelLogs.collectAsStateWithLifecycle()
 
     val vpnPermissionLauncher = rememberLauncherForActivityResult(
@@ -463,7 +464,10 @@ fun DashboardScreen(
 
         // App Traffic Telemetry & Connection Status Card
         AppTrafficDashboardCard(
+            vpnStatus = vpnStatus,
             appStats = appStats,
+            isMonitoringEnabled = isTrafficMonitoringEnabled,
+            onToggleMonitoring = { viewModel.setTrafficMonitoringEnabled(it) },
             onOpenSplitTunnelSettings = onNavigateToSettings
         )
 

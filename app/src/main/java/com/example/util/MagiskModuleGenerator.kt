@@ -25,7 +25,7 @@ object MagiskModuleGenerator {
             val zipFile = File(outputDir, "AWGMutator_${cleanName}_Magisk_Module.zip")
             if (zipFile.exists()) zipFile.delete()
 
-            val primaryDns = config.dns.split(",").firstOrNull()?.trim() ?: "111.88.96.50"
+            val primaryDns = config.dns.split(",").firstOrNull()?.trim() ?: "1.1.1.1"
             val cleanAddr = if (config.address.contains("/")) config.address else "${config.address}/32"
 
             val moduleProp = """

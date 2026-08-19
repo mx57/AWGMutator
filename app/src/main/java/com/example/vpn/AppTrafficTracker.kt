@@ -13,8 +13,10 @@ import android.net.Uri
 import android.os.Build
 import android.os.Process
 import android.provider.Settings
+import com.example.App
 import com.example.domain.model.AppConnectionStatus
 import com.example.domain.model.AppTrafficStat
+import com.example.domain.model.VpnState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -35,16 +37,21 @@ data class CachedAppMeta(
 )
 
 /**
- * Per-App Network Traffic Tracker utilizing Android [NetworkStatsManager] and [TrafficStats]
- * to accurately capture and display real-time byte consumption and transfer speeds.
- * Only applications that have actually consumed traffic (> 0 KB) or have active transfer speeds are reported.
+ * Per-App Network Traffic Tracker for the active VPN Tunnel.
+ * Captures and displays real-time byte consumption and speeds ONLY for traffic passing through the VPN.
+ * If the tunnel is not connected or no traffic passes through it, no apps are displayed.
+ * Includes a persistent enable/disable toggle.
  */
 class AppTrafficTracker(
     private val context: Context,
     private val splitTunnelManager: SplitTunnelManager
 ) {
+    private val prefs = context.getSharedPreferences("app_traffic_tracker_prefs", Context.MODE_PRIVATE)
     private val scope = CoroutineScope(Dispatchers.IO + Job())
     private var trackingJob: Job? = null
+
+    private val _isMonitoringEnabled = MutableStateFlow(prefs.getBoolean("is_monitoring_enabled", true))
+    val isMonitoringEnabled: StateFlow<Boolean> = _isMonitoringEnabled.asStateFlow()
 
     private val _appStats = MutableStateFlow<List<AppTrafficStat>>(emptyList())
     val appStats: StateFlow<List<AppTrafficStat>> = _appStats.asStateFlow()
@@ -62,8 +69,20 @@ class AppTrafficTracker(
     private var sessionStartTime = System.currentTimeMillis()
 
     init {
-        // Start background polling immediately
-        startTracking()
+        if (_isMonitoringEnabled.value) {
+            startTracking()
+        }
+    }
+
+    fun setMonitoringEnabled(enabled: Boolean) {
+        _isMonitoringEnabled.value = enabled
+        prefs.edit().putBoolean("is_monitoring_enabled", enabled).apply()
+        if (enabled) {
+            startTracking()
+        } else {
+            stopTracking()
+            _appStats.value = emptyList()
+        }
     }
 
     fun checkPermission(): Boolean {
@@ -125,14 +144,15 @@ class AppTrafficTracker(
         resetSessionBaseline()
         trackingJob = scope.launch {
             while (isActive) {
-                sampleTraffic()
+                sampleTunnelTraffic()
                 delay(1500)
             }
         }
     }
 
     fun stopTracking() {
-        // We keep tracking active for live dashboard telemetry
+        trackingJob?.cancel()
+        trackingJob = null
     }
 
     private fun cacheInstalledApps() {
@@ -158,7 +178,7 @@ class AppTrafficTracker(
                 )
             }
         } catch (_: Exception) {
-            // Package manager query error fallback
+            // Fallback
         }
     }
 
@@ -195,8 +215,8 @@ class AppTrafficTracker(
     private fun formatAppName(packageName: String): String {
         return when {
             packageName.contains("youtube", ignoreCase = true) -> "YouTube"
-            packageName.contains("chrome", ignoreCase = true) -> "Google Chrome"
             packageName.contains("telegram", ignoreCase = true) -> "Telegram"
+            packageName.contains("chrome", ignoreCase = true) -> "Google Chrome"
             packageName.contains("whatsapp", ignoreCase = true) -> "WhatsApp"
             packageName.contains("instagram", ignoreCase = true) -> "Instagram"
             packageName.contains("spotify", ignoreCase = true) -> "Spotify"
@@ -212,6 +232,11 @@ class AppTrafficTracker(
 
     fun resetSessionBaseline() {
         sessionStartTime = System.currentTimeMillis()
+        previousRxMap.clear()
+        previousTxMap.clear()
+        baselineRxMap.clear()
+        baselineTxMap.clear()
+
         val uids = appMetaCache.keys().toList()
         for (uid in uids) {
             val (rx, tx) = queryRawByteCounters(uid)
@@ -222,7 +247,7 @@ class AppTrafficTracker(
 
     suspend fun refreshOnce() = withContext(Dispatchers.IO) {
         checkPermission()
-        sampleTraffic()
+        sampleTunnelTraffic()
     }
 
     /**
@@ -237,53 +262,61 @@ class AppTrafficTracker(
     }
 
     /**
-     * Queries all active network buckets via NetworkStatsManager across Wi-Fi, Mobile, VPN, and Ethernet.
+     * Queries VPN-only traffic buckets via NetworkStatsManager.
      */
-    private fun queryNetworkStatsManagerAll(): Map<Int, Pair<Long, Long>> {
+    private fun queryVpnNetworkStats(): Map<Int, Pair<Long, Long>> {
         val nsm = networkStatsManager ?: return emptyMap()
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.M) return emptyMap()
         if (!hasUsageStatsPermission(context)) return emptyMap()
 
         val results = HashMap<Int, Pair<Long, Long>>()
         val now = System.currentTimeMillis()
-        // Query from session start or past 24 hours to capture all recent active traffic
-        val startTime = (sessionStartTime - 3600_000L).coerceAtLeast(0L)
+        val startTime = sessionStartTime.coerceAtLeast(0L)
 
-        val networkTypes = listOf(
-            ConnectivityManager.TYPE_WIFI,
-            ConnectivityManager.TYPE_MOBILE,
-            ConnectivityManager.TYPE_VPN,
-            9 // ConnectivityManager.TYPE_ETHERNET
-        )
+        try {
+            // Query specifically for TYPE_VPN interface traffic
+            val stats = nsm.querySummary(ConnectivityManager.TYPE_VPN, null, startTime, now)
+            val bucket = NetworkStats.Bucket()
+            while (stats.hasNextBucket()) {
+                stats.getNextBucket(bucket)
+                val uid = bucket.uid
+                if (uid <= 0 || uid == Process.myUid()) continue
 
-        for (netType in networkTypes) {
-            try {
-                val stats = nsm.querySummary(netType, null, startTime, now)
-                val bucket = NetworkStats.Bucket()
-                while (stats.hasNextBucket()) {
-                    stats.getNextBucket(bucket)
-                    val uid = bucket.uid
-                    // Skip system root / invalid / our own app UID
-                    if (uid <= 0 || uid == Process.myUid()) continue
-
-                    val rx = bucket.rxBytes
-                    val tx = bucket.txBytes
-                    if (rx > 0L || tx > 0L) {
-                        val current = results[uid] ?: Pair(0L, 0L)
-                        results[uid] = Pair(current.first + rx, current.second + tx)
-                    }
+                val rx = bucket.rxBytes
+                val tx = bucket.txBytes
+                if (rx > 0L || tx > 0L) {
+                    val current = results[uid] ?: Pair(0L, 0L)
+                    results[uid] = Pair(current.first + rx, current.second + tx)
                 }
-                stats.close()
-            } catch (_: SecurityException) {
-                _hasUsagePermission.value = false
-            } catch (_: Exception) {
-                // Ignore per-interface errors
             }
+            stats.close()
+        } catch (_: SecurityException) {
+            _hasUsagePermission.value = false
+        } catch (_: Exception) {
+            // Ignore
         }
         return results
     }
 
-    private fun sampleTraffic() {
+    private fun sampleTunnelTraffic() {
+        if (!_isMonitoringEnabled.value) {
+            _appStats.value = emptyList()
+            return
+        }
+
+        // Check if VPN is connected
+        val isVpnConnected = try {
+            App.instance.tunnelManager.status.value.state == VpnState.CONNECTED
+        } catch (_: Exception) {
+            false
+        }
+
+        // If VPN is not connected, do NOT display any app traffic (tunnel is inactive)
+        if (!isVpnConnected) {
+            _appStats.value = emptyList()
+            return
+        }
+
         if (appMetaCache.isEmpty()) {
             cacheInstalledApps()
         }
@@ -294,12 +327,12 @@ class AppTrafficTracker(
         val splitMode = splitTunnelManager.mode
         val selectedPackages = splitTunnelManager.getSelectedPackages()
 
-        // 1. Gather stats from NetworkStatsManager
-        val nsmMap = queryNetworkStatsManagerAll()
+        // 1. Gather stats from VPN NetworkStatsManager
+        val vpnNsmMap = queryVpnNetworkStats()
 
-        // 2. Discover all candidate UIDs (from NSM results, previously active UIDs, and cached apps)
+        // 2. Discover all candidate UIDs
         val candidateUids = mutableSetOf<Int>()
-        candidateUids.addAll(nsmMap.keys)
+        candidateUids.addAll(vpnNsmMap.keys)
         candidateUids.addAll(previousRxMap.keys)
         for ((uid, _) in appMetaCache) {
             candidateUids.add(uid)
@@ -310,56 +343,72 @@ class AppTrafficTracker(
         for (uid in candidateUids) {
             if (uid == Process.myUid()) continue
 
-            val (trafficRx, trafficTx) = queryRawByteCounters(uid)
-            val (nsmRx, nsmTx) = nsmMap[uid] ?: Pair(0L, 0L)
+            val appMeta = resolveAppMeta(uid)
+            val isSelected = selectedPackages.contains(appMeta.packageName)
 
-            // Select the most comprehensive counter available
-            val rawRx = maxOf(trafficRx, nsmRx)
-            val rawTx = maxOf(trafficTx, nsmTx)
+            // Determine routing status through VPN
+            val status = when (splitMode) {
+                SplitTunnelMode.ALL_THROUGH_VPN -> AppConnectionStatus.ROUTED_VIA_VPN
+                SplitTunnelMode.ONLY_SELECTED_THROUGH_VPN -> {
+                    if (isSelected) AppConnectionStatus.ROUTED_VIA_VPN else AppConnectionStatus.BYPASS_DIRECT
+                }
+                SplitTunnelMode.ALL_EXCEPT_SELECTED -> {
+                    if (isSelected) AppConnectionStatus.BYPASS_DIRECT else AppConnectionStatus.ROUTED_VIA_VPN
+                }
+            }
+
+            // ONLY track apps that are routed through the VPN tunnel
+            if (status != AppConnectionStatus.ROUTED_VIA_VPN) {
+                continue
+            }
+
+            val (trafficRx, trafficTx) = queryRawByteCounters(uid)
+            val (nsmRx, nsmTx) = vpnNsmMap[uid] ?: Pair(0L, 0L)
 
             val baseRx = baselineRxMap[uid] ?: 0L
             val baseTx = baselineTxMap[uid] ?: 0L
 
-            val sessionRx = if (baseRx in 1..rawRx) (rawRx - baseRx) else rawRx
-            val sessionTx = if (baseTx in 1..rawTx) (rawTx - baseTx) else rawTx
+            // Calculate session bytes routed via VPN
+            val sessionRx = if (nsmRx > 0L) {
+                nsmRx
+            } else if (baseRx > 0L && trafficRx >= baseRx) {
+                trafficRx - baseRx
+            } else {
+                0L
+            }
 
-            val prevRx = previousRxMap[uid] ?: rawRx
-            val prevTx = previousTxMap[uid] ?: rawTx
+            val sessionTx = if (nsmTx > 0L) {
+                nsmTx
+            } else if (baseTx > 0L && trafficTx >= baseTx) {
+                trafficTx - baseTx
+            } else {
+                0L
+            }
 
-            val rxDelta = (rawRx - prevRx).coerceAtLeast(0L)
-            val txDelta = (rawTx - prevTx).coerceAtLeast(0L)
+            val prevRx = previousRxMap[uid] ?: sessionRx
+            val prevTx = previousTxMap[uid] ?: sessionTx
+
+            val rxDelta = (sessionRx - prevRx).coerceAtLeast(0L)
+            val txDelta = (sessionTx - prevTx).coerceAtLeast(0L)
 
             val rxSpeed = (rxDelta / deltaSeconds).toLong()
             val txSpeed = (txDelta / deltaSeconds).toLong()
 
-            previousRxMap[uid] = rawRx
-            previousTxMap[uid] = rawTx
+            previousRxMap[uid] = sessionRx
+            previousTxMap[uid] = sessionTx
 
-            val totalBytes = maxOf(sessionRx + sessionTx, rawRx + rawTx)
+            val totalBytes = sessionRx + sessionTx
             val totalSpeed = rxSpeed + txSpeed
 
-            // STRICT FILTER: Only include apps that actually generated traffic (> 0 KB / >= 1024 Bytes) or have live speed
+            // STRICT FILTER: Only include apps that actually generated traffic through the tunnel (> 0 KB / >= 1024 Bytes) or have active speed
             if (totalBytes >= 1024L || totalSpeed > 0L) {
-                val appMeta = resolveAppMeta(uid)
-                val isSelected = selectedPackages.contains(appMeta.packageName)
-
-                val status = when (splitMode) {
-                    SplitTunnelMode.ALL_THROUGH_VPN -> AppConnectionStatus.ROUTED_VIA_VPN
-                    SplitTunnelMode.ONLY_SELECTED_THROUGH_VPN -> {
-                        if (isSelected) AppConnectionStatus.ROUTED_VIA_VPN else AppConnectionStatus.BYPASS_DIRECT
-                    }
-                    SplitTunnelMode.ALL_EXCEPT_SELECTED -> {
-                        if (isSelected) AppConnectionStatus.BYPASS_DIRECT else AppConnectionStatus.ROUTED_VIA_VPN
-                    }
-                }
-
                 list.add(
                     AppTrafficStat(
                         packageName = appMeta.packageName,
                         appName = appMeta.appName,
                         uid = uid,
-                        rxBytes = sessionRx.coerceAtLeast(rxDelta),
-                        txBytes = sessionTx.coerceAtLeast(txDelta),
+                        rxBytes = sessionRx,
+                        txBytes = sessionTx,
                         totalBytes = totalBytes,
                         rxSpeedBytesPerSec = rxSpeed,
                         txSpeedBytesPerSec = txSpeed,
@@ -373,7 +422,7 @@ class AppTrafficTracker(
 
         lastSampleTime = currentTime
 
-        // Sort: Active live speed first, then highest total volume, then app name
+        // Sort: Active live speed first, then highest total session volume, then app name
         val sorted = list.sortedWith(
             compareByDescending<AppTrafficStat> { it.rxSpeedBytesPerSec + it.txSpeedBytesPerSec }
                 .thenByDescending { it.totalBytes }

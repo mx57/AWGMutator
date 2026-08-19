@@ -13,7 +13,7 @@ data class AwgConfig(
     val name: String,
     val privateKey: String,
     val address: String = "172.16.0.2/32",
-    val dns: String = "111.88.96.50, 111.88.96.51",
+    val dns: String = "1.1.1.1, 8.8.8.8, 1.0.0.1",
     val mtu: Int = 1280,
     val jc: Int = 4,
     val jmin: Int = 40,
@@ -33,7 +33,7 @@ data class AwgConfig(
     val sni: String? = null,
     val peerPublicKey: String = "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=",
     val presharedKey: String? = null,
-    val allowedIps: String = "1.0.0.0/8, 2.0.0.0/7, 4.0.0.0/6, 8.0.0.0/7, 11.0.0.0/8, 12.0.0.0/6, 16.0.0.0/4, 32.0.0.0/3, 64.0.0.0/3, 96.0.0.0/4, 112.0.0.0/5, 120.0.0.0/6, 124.0.0.0/7, 126.0.0.0/8, 128.0.0.0/3, 160.0.0.0/5, 168.0.0.0/8, 169.0.0.0/9, 169.128.0.0/10, 169.192.0.0/11, 169.224.0.0/12, 169.240.0.0/13, 169.248.0.0/14, 169.252.0.0/15, 169.255.0.0/16, 170.0.0.0/7, 172.0.0.0/12, 172.32.0.0/11, 172.64.0.0/10, 172.128.0.0/9, 173.0.0.0/8, 174.0.0.0/7, 176.0.0.0/4, 192.0.0.0/9, 192.128.0.0/11, 192.160.0.0/13, 192.169.0.0/16, 192.170.0.0/15, 192.172.0.0/14, 192.176.0.0/12, 192.192.0.0/10, 193.0.0.0/8, 194.0.0.0/7, 196.0.0.0/6, 200.0.0.0/5, 208.0.0.0/4, 224.0.0.0/4, ::/1, 8000::/2, c000::/3, e000::/4, f000::/5, f800::/6, fe00::/9, fec0::/10, ff00::/8",
+    val allowedIps: String = "0.0.0.0/0, ::/0",
     val endpoint: String = "162.159.192.13:1074",
     val persistentKeepalive: Int = 25,
     val isWarp: Boolean = false,
@@ -133,10 +133,19 @@ data class AwgConfig(
             }.joinToString(", ")
         if (cleanAddr.isNotBlank()) {
             builder.appendLine("Address = $cleanAddr")
+        } else {
+            builder.appendLine("Address = 172.16.0.2/32")
         }
-        if (dns.isNotBlank()) {
-            builder.appendLine("DNS = $dns")
+
+        // Sanitize DNS: Ensure fast and reliable global DNS servers
+        val rawDnsList = dns.split(",").map { it.trim() }.filter { it.isNotBlank() && !it.startsWith("111.88.") }
+        val effectiveDns = if (rawDnsList.isNotEmpty()) {
+            rawDnsList.joinToString(", ")
+        } else {
+            "1.1.1.1, 8.8.8.8, 1.0.0.1"
         }
+        builder.appendLine("DNS = $effectiveDns")
+
         val effectiveMtu = if (mtu in 1280..1420) mtu else 1280
         builder.appendLine("MTU = $effectiveMtu")
 
@@ -146,7 +155,19 @@ data class AwgConfig(
         if (!presharedKey.isNullOrBlank()) {
             builder.appendLine("PresharedKey = $presharedKey")
         }
-        val cleanAllowed = if (allowedIps.isNotBlank()) allowedIps else "0.0.0.0/0, ::/0"
+
+        val hasIpv6InAddress = cleanAddr.contains(":")
+        val rawAllowed = if (allowedIps.isNotBlank()) allowedIps else "0.0.0.0/0, ::/0"
+        val cleanAllowed = if (!hasIpv6InAddress) {
+            // Prune IPv6 routes if interface has no IPv6 address to prevent blackholing
+            rawAllowed.split(",")
+                .map { it.trim() }
+                .filter { it.isNotBlank() && !it.contains("::") }
+                .joinToString(", ")
+                .ifBlank { "0.0.0.0/0" }
+        } else {
+            rawAllowed
+        }
         builder.appendLine("AllowedIPs = $cleanAllowed")
         val cleanEndpoint = sanitizeEndpoint(endpoint)
         builder.appendLine("Endpoint = $cleanEndpoint")

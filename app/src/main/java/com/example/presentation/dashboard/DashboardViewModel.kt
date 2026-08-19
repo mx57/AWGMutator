@@ -60,6 +60,8 @@ class DashboardViewModel(
 
     val appStats: StateFlow<List<AppTrafficStat>> = App.instance.appTrafficTracker.appStats
 
+    val isTrafficMonitoringEnabled: StateFlow<Boolean> = App.instance.appTrafficTracker.isMonitoringEnabled
+
     val tunnelLogs: StateFlow<List<String>> = App.instance.tunnelManager.logs
 
     val configs: StateFlow<List<AwgConfig>> = configRepository.getAllConfigs()
@@ -255,5 +257,9 @@ class DashboardViewModel(
 
     fun clearTunnelLogs() {
         App.instance.tunnelManager.clearLogs()
+    }
+
+    fun setTrafficMonitoringEnabled(enabled: Boolean) {
+        App.instance.appTrafficTracker.setMonitoringEnabled(enabled)
     }
 }

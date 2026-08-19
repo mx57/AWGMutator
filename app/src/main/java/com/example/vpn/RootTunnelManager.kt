@@ -69,7 +69,7 @@ class RootTunnelManager(private val context: Context) {
         // 1. Clean previous interface if any
         teardownInterface()
 
-        val primaryDns = config.dns.split(",").firstOrNull()?.trim() ?: "111.88.96.50"
+        val primaryDns = config.dns.split(",").firstOrNull()?.trim() ?: "1.1.1.1"
         val ipAddr = config.address.let { if (it.contains("/")) it else "$it/32" }
 
         val commands = mutableListOf<String>()

@@ -31,7 +31,7 @@ class GenerateAwgConfigUseCase(
         peerPublicKey: String = "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=",
         presharedKey: String? = null,
         address: String = "172.16.0.2/32",
-        dns: String = "111.88.96.50, 111.88.96.51",
+        dns: String = "1.1.1.1, 8.8.8.8, 1.0.0.1",
         mtu: Int = 1280,
         preset: ObfuscationPreset? = ObfuscationPreset.VERIFIED_AWG_RUSSIAN_BYPASS,
         customJc: Int? = null,

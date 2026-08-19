@@ -22,13 +22,8 @@ data class DnsServer(
  */
 object DnsCatalog {
     val servers: List<DnsServer> = listOf(
-        // User's Verified Working DNS & Uncensored Providers
-        DnsServer("cu_uncensored", "Unicom Uncensored DNS (Verified)", "111.88.96.50", "111.88.96.51", "Bypass DNS with non-filtering routing", "RU/CN"),
         DnsServer("cf_standard", "Cloudflare Standard (1.1.1.1)", "1.1.1.1", "1.0.0.1", "Fastest worldwide anycast DNS with zero logging", "Global"),
-        DnsServer("cf_security", "Cloudflare Security (1.1.1.2)", "1.1.1.2", "1.0.0.2", "Blocks malware and phishing domains", "Global"),
-        DnsServer("cf_family", "Cloudflare Family (1.1.1.3)", "1.1.1.3", "1.0.0.3", "Blocks malware and adult content", "Global"),
         DnsServer("google", "Google Public DNS", "8.8.8.8", "8.8.4.4", "Global resilient DNS with ECS support", "Global"),
-        DnsServer("quad9_sec", "Quad9 High Security", "9.9.9.9", "149.112.112.112", "Swiss non-profit DNS with threat intelligence", "CH"),
         DnsServer("quad9_unfiltered", "Quad9 Unfiltered", "9.9.9.10", "149.112.112.10", "Unfiltered Swiss DNS without domain blocking", "CH"),
         DnsServer("quad9_clean", "Quad9 ECS Enabled", "9.9.9.11", "149.112.112.11", "Optimized routing with EDNS Client Subnet", "CH"),
         DnsServer("adguard_def", "AdGuard Standard", "94.140.14.14", "94.140.15.15", "Blocks ads, trackers, and telemetry", "CY"),
