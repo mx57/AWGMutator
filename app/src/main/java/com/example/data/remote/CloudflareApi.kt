@@ -16,6 +16,7 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
+import java.net.InetAddress
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -34,13 +35,36 @@ data class CloudflareMirror(
 
 /**
  * Robust Client for interacting with Cloudflare WARP client API with dynamic mirror speed probing,
- * auto-failover across 14+ CDN and direct IP endpoints, and DNS server integration.
+ * custom anti-censorship DNS resolver, and DNS server integration.
  */
 class CloudflareApi(
     private val client: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(4, TimeUnit.SECONDS)
-        .readTimeout(4, TimeUnit.SECONDS)
-        .writeTimeout(4, TimeUnit.SECONDS)
+        .dns(object : okhttp3.Dns {
+            override fun lookup(hostname: String): List<InetAddress> {
+                if (hostname.equals("api.cloudflareclient.com", ignoreCase = true) ||
+                    hostname.equals("engage.cloudflareclient.com", ignoreCase = true)
+                ) {
+                    val directIps = listOf(
+                        "188.114.97.1",
+                        "188.114.96.1",
+                        "188.114.98.1",
+                        "188.114.99.1",
+                        "162.159.192.1",
+                        "162.159.193.1"
+                    )
+                    val resolved = directIps.mapNotNull { ip ->
+                        runCatching { InetAddress.getByName(ip) }.getOrNull()
+                    }
+                    if (resolved.isNotEmpty()) {
+                        return resolved
+                    }
+                }
+                return okhttp3.Dns.SYSTEM.lookup(hostname)
+            }
+        })
+        .connectTimeout(5, TimeUnit.SECONDS)
+        .readTimeout(5, TimeUnit.SECONDS)
+        .writeTimeout(5, TimeUnit.SECONDS)
         .retryOnConnectionFailure(true)
         .build()
 ) {
@@ -48,17 +72,8 @@ class CloudflareApi(
         CloudflareMirror("https://api.cloudflareclient.com/v0a3900", null, "Official API v0a3900"),
         CloudflareMirror("https://api.cloudflareclient.com/v0a2158", null, "Official API v0a2158"),
         CloudflareMirror("https://api.cloudflareclient.com/v0a1922", null, "Official API v0a1922"),
-        CloudflareMirror("https://api.cloudflareclient.com/v0a884", null, "Official API v0a884"),
-        CloudflareMirror("https://engage.cloudflareclient.com/v0a2158", "api.cloudflareclient.com", "Engage Anycast Mirror"),
-        CloudflareMirror("https://162.159.192.1/v0a2158", "api.cloudflareclient.com", "Direct IP 162.159.192.1"),
-        CloudflareMirror("https://162.159.193.1/v0a2158", "api.cloudflareclient.com", "Direct IP 162.159.193.1"),
-        CloudflareMirror("https://162.159.195.1/v0a2158", "api.cloudflareclient.com", "Direct IP 162.159.195.1"),
-        CloudflareMirror("https://188.114.96.1/v0a2158", "api.cloudflareclient.com", "Direct IP 188.114.96.1"),
-        CloudflareMirror("https://188.114.97.1/v0a2158", "api.cloudflareclient.com", "Direct IP 188.114.97.1"),
-        CloudflareMirror("https://188.114.98.1/v0a2158", "api.cloudflareclient.com", "Direct IP 188.114.98.1"),
-        CloudflareMirror("https://188.114.99.1/v0a2158", "api.cloudflareclient.com", "Direct IP 188.114.99.1"),
-        CloudflareMirror("https://cloudflare-warp.isegaro.workers.dev/v0a2158", null, "Cloudflare Workers Proxy 1"),
-        CloudflareMirror("https://warp-api.ext.workers.dev/v0a2158", null, "Cloudflare Workers Proxy 2")
+        CloudflareMirror("https://engage.cloudflareclient.com/v0a2158", null, "Engage Anycast Mirror"),
+        CloudflareMirror("https://api.cloudflareclient.com/v0a884", null, "Official API v0a884")
     )
 
     private val jsonMediaType = "application/json; charset=UTF-8".toMediaType()
@@ -244,27 +259,8 @@ class CloudflareApi(
             }
         }
 
-        // Offline synthesis fallback: Synthesizes a 100% valid AmneziaWG / WARP keypair and configuration
-        val keyPair = WireGuardKeyGen.generateKeyPair()
-        val randomHost = 2 + Random().nextInt(250)
-        val selectedEndpoint = EndpointCatalog.getRandomEndpoint()
-        val reservedBytes = ByteArray(3).apply { Random().nextBytes(this) }
-        val reservedBase64 = Base64.encodeToString(reservedBytes, Base64.NO_WRAP)
-
-        return@withContext Result.success(
-            WarpConfig(
-                accountId = "synth_${generateRandomString(12)}",
-                accessToken = "synth_${generateRandomString(32)}",
-                privateKey = keyPair.privateKey,
-                publicKey = keyPair.publicKey,
-                v4Address = "172.16.0.2/32",
-                v6Address = "2606:4700:110:893c::$randomHost/128",
-                endpointV4 = selectedEndpoint,
-                endpointV6 = "[2606:4700:d0::a29f:c001]:1074",
-                reserved = reservedBase64,
-                peerPublicKey = "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=",
-                warpPlusEnabled = false
-            )
+        Result.failure(
+            IllegalStateException("Не удалось зарегистрировать устройство на серверах Cloudflare WARP. Пожалуйста, проверьте подключение к сети или импортируйте собственный рабочий .conf файл.")
         )
     }
 

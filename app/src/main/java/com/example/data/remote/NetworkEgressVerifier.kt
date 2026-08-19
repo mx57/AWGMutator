@@ -17,10 +17,22 @@ import java.util.concurrent.TimeUnit
  */
 class NetworkEgressVerifier(
     private val client: OkHttpClient = OkHttpClient.Builder()
-        .connectTimeout(2500, TimeUnit.MILLISECONDS)
-        .readTimeout(2500, TimeUnit.MILLISECONDS)
-        .callTimeout(3500, TimeUnit.MILLISECONDS)
-        .retryOnConnectionFailure(true)
+        .dns(object : okhttp3.Dns {
+            override fun lookup(hostname: String): List<InetAddress> {
+                if (hostname.contains("cloudflare", ignoreCase = true)) {
+                    val directIps = listOf("188.114.97.1", "188.114.96.1", "1.1.1.1")
+                    val resolved = directIps.mapNotNull { ip ->
+                        runCatching { InetAddress.getByName(ip) }.getOrNull()
+                    }
+                    if (resolved.isNotEmpty()) return resolved
+                }
+                return okhttp3.Dns.SYSTEM.lookup(hostname)
+            }
+        })
+        .connectTimeout(2000, TimeUnit.MILLISECONDS)
+        .readTimeout(2000, TimeUnit.MILLISECONDS)
+        .callTimeout(2500, TimeUnit.MILLISECONDS)
+        .retryOnConnectionFailure(false)
         .build()
 ) {
 
