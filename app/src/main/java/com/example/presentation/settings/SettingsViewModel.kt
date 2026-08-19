@@ -43,11 +43,7 @@ class SettingsViewModel(
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
 
     init {
-        loadInstalledApps()
         checkRootAvailability()
-        viewModelScope.launch {
-            App.instance.appTrafficTracker.refreshOnce()
-        }
     }
 
     private fun checkRootAvailability() {

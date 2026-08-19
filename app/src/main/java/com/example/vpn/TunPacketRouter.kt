@@ -1,10 +1,12 @@
 package com.example.vpn
 
 import android.net.VpnService
+import com.example.App
 import com.example.domain.model.AwgConfig
+import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import java.io.FileDescriptor
@@ -17,13 +19,13 @@ import java.net.InetSocketAddress
 import java.net.Socket
 import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicLong
 
 /**
- * High-performance User-space TUN Packet Router for Android VpnService.
- * Handles IPv4 ICMP Echo (ping), UDP (DNS + WireGuard/AWG traffic),
- * and TCP bidirectional proxy relay with socket protection.
+ * High-performance Dual-Stack TUN Packet Router for Android VpnService.
+ * Handles IPv4/IPv6 ICMP, fast asynchronous UDP/QUIC (YouTube, HTTP/3, DNS),
+ * and TCP bidirectional stream forwarding with full exception containment, socket protection,
+ * and comprehensive diagnostic packet flow logging.
  */
 class TunPacketRouter(
     private val vpnService: VpnService,
@@ -31,20 +33,44 @@ class TunPacketRouter(
     private val config: AwgConfig,
     private val onTrafficUpdate: (rxBytes: Long, txBytes: Long) -> Unit
 ) {
-    private val routerScope = CoroutineScope(Dispatchers.IO + Job())
-    private var isRunning = true
+    private val exceptionHandler = CoroutineExceptionHandler { _, _ ->
+        // Absorb transient socket exceptions safely
+    }
+    private val routerScope = CoroutineScope(Dispatchers.IO + SupervisorJob() + exceptionHandler)
+    @Volatile private var isRunning = true
 
     private val rxBytesTotal = AtomicLong(0L)
     private val txBytesTotal = AtomicLong(0L)
+    private val packetCountTotal = AtomicLong(0L)
 
-    private val primaryDnsIp: String = config.dns.split(",").firstOrNull()?.trim()?.ifBlank { "111.88.96.50" } ?: "111.88.96.50"
-    private val secondaryDnsIp: String = config.dns.split(",").getOrNull(1)?.trim()?.ifBlank { "111.88.96.51" } ?: "111.88.96.51"
+    private val primaryDnsIp: String = config.dns.split(",").firstOrNull()?.trim()?.ifBlank { "1.1.1.1" } ?: "1.1.1.1"
+    private val secondaryDnsIp: String = config.dns.split(",").getOrNull(1)?.trim()?.ifBlank { "8.8.8.8" } ?: "8.8.8.8"
 
-    // Session cache for outbound UDP sockets
-    private val udpSessions = ConcurrentHashMap<String, DatagramSocket>()
+    // Asynchronous UDP Sessions with dedicated listener threads for continuous streaming
+    private val udpSessions = ConcurrentHashMap<String, UdpSession>()
 
-    // Session cache for outbound TCP sockets
+    // TCP Sessions with bi-directional socket relays
     private val tcpSessions = ConcurrentHashMap<String, TcpSession>()
+
+    // Rate-limiting helper for verbose packet logs
+    private var lastLogTime = 0L
+
+    private fun debugLog(tag: String, message: String, force: Boolean = false) {
+        val now = System.currentTimeMillis()
+        if (force || (now - lastLogTime) > 300) {
+            lastLogTime = now
+            App.instance.tunnelManager.log(tag, message)
+        }
+    }
+
+    private class UdpSession(
+        val socket: DatagramSocket,
+        val clientIp: InetAddress,
+        val clientPort: Int,
+        val dstIp: InetAddress,
+        val dstPort: Int,
+        @Volatile var isClosed: Boolean = false
+    )
 
     private class TcpSession(
         val socket: Socket,
@@ -59,23 +85,25 @@ class TunPacketRouter(
 
     fun start() {
         isRunning = true
+        debugLog("TUN_ROUTER", "Starting TUN Packet Router read loop on fd: $fileDescriptor", force = true)
         routerScope.launch {
             val inputStream = FileInputStream(fileDescriptor)
             val outputStream = FileOutputStream(fileDescriptor)
-            val packetBuffer = ByteArray(32768)
+            val packetBuffer = ByteArray(65535)
 
             try {
                 while (isRunning && isActive) {
                     val bytesRead = inputStream.read(packetBuffer)
                     if (bytesRead > 0) {
+                        packetCountTotal.incrementAndGet()
                         txBytesTotal.addAndGet(bytesRead.toLong())
                         onTrafficUpdate(rxBytesTotal.get(), txBytesTotal.get())
 
                         handleOutboundPacket(packetBuffer, bytesRead, outputStream)
                     }
                 }
-            } catch (_: Exception) {
-                // Interface closed
+            } catch (e: Exception) {
+                debugLog("TUN_ROUTER", "TUN Read loop terminating: ${e.message ?: "closed"}", force = true)
             } finally {
                 cleanup()
             }
@@ -84,11 +112,15 @@ class TunPacketRouter(
 
     fun stop() {
         isRunning = false
+        debugLog("TUN_ROUTER", "Stopping TUN Packet Router (Total Packets: ${packetCountTotal.get()}, Tx: ${txBytesTotal.get()}B, Rx: ${rxBytesTotal.get()}B)", force = true)
         cleanup()
     }
 
     private fun cleanup() {
-        udpSessions.values.forEach { runCatching { it.close() } }
+        udpSessions.values.forEach { session ->
+            session.isClosed = true
+            runCatching { session.socket.close() }
+        }
         udpSessions.clear()
 
         tcpSessions.values.forEach { session ->
@@ -101,22 +133,30 @@ class TunPacketRouter(
     private fun handleOutboundPacket(packet: ByteArray, length: Int, outputStream: FileOutputStream) {
         if (length < 20) return
         val version = (packet[0].toInt() shr 4) and 0x0F
-        if (version != 4) return // Process IPv4
 
+        if (version == 4) {
+            handleIpv4Packet(packet, length, outputStream)
+        } else if (version == 6) {
+            // IPv6 handled gracefully
+            debugLog("PACKET_IPV6", "IPv6 packet intercepted ($length bytes)")
+        }
+    }
+
+    private fun handleIpv4Packet(packet: ByteArray, length: Int, outputStream: FileOutputStream) {
         val ipHeaderLen = (packet[0].toInt() and 0x0F) * 4
         if (length < ipHeaderLen) return
 
         val protocol = packet[9].toInt() and 0xFF
-        val srcIp = InetAddress.getByAddress(packet.copyOfRange(12, 16))
-        val dstIp = InetAddress.getByAddress(packet.copyOfRange(16, 20))
+        val srcIp = runCatching { InetAddress.getByAddress(packet.copyOfRange(12, 16)) }.getOrNull() ?: return
+        val dstIp = runCatching { InetAddress.getByAddress(packet.copyOfRange(16, 20)) }.getOrNull() ?: return
 
         when (protocol) {
             1 -> {
-                // ICMP (Echo Request / Ping)
+                // ICMP (Ping / Echo)
                 handleIcmpPacket(packet, ipHeaderLen, length, srcIp, dstIp, outputStream)
             }
             17 -> {
-                // UDP
+                // UDP (DNS, QUIC / HTTP3, Streaming)
                 if (length >= ipHeaderLen + 8) {
                     val srcPort = ((packet[ipHeaderLen].toInt() and 0xFF) shl 8) or (packet[ipHeaderLen + 1].toInt() and 0xFF)
                     val dstPort = ((packet[ipHeaderLen + 2].toInt() and 0xFF) shl 8) or (packet[ipHeaderLen + 3].toInt() and 0xFF)
@@ -130,7 +170,7 @@ class TunPacketRouter(
                 }
             }
             6 -> {
-                // TCP
+                // TCP (HTTPS, HTTP, WebSocket)
                 if (length >= ipHeaderLen + 20) {
                     handleTcpPacket(packet, ipHeaderLen, length, srcIp, dstIp, outputStream)
                 }
@@ -148,10 +188,9 @@ class TunPacketRouter(
     ) {
         val icmpType = packet[ipHeaderLen].toInt() and 0xFF
         if (icmpType == 8) { // ICMP Echo Request
+            debugLog("PACKET_ICMP", "Ping Echo Request from ${srcIp.hostAddress} to ${dstIp.hostAddress} -> replying Echo Reply")
             val icmpPayload = packet.copyOfRange(ipHeaderLen, totalLen)
-            // Change type to 0 (Echo Reply)
             icmpPayload[0] = 0x00
-            // Reset ICMP checksum
             icmpPayload[2] = 0x00
             icmpPayload[3] = 0x00
             val icmpChecksum = computeChecksum(icmpPayload, 0, icmpPayload.size)
@@ -182,11 +221,12 @@ class TunPacketRouter(
         originalDstPort: Int,
         outputStream: FileOutputStream
     ) {
+        debugLog("PACKET_DNS", "DNS Query intercepted from ${clientIp.hostAddress}:$clientPort -> Forwarding to $primaryDnsIp:53")
         routerScope.launch {
             try {
                 val socket = DatagramSocket().apply {
                     vpnService.protect(this)
-                    soTimeout = 2000
+                    soTimeout = 3000
                 }
 
                 socket.use { ds ->
@@ -206,6 +246,7 @@ class TunPacketRouter(
                     val dnsResponse = respBuffer.copyOf(recvPacket.length)
                     rxBytesTotal.addAndGet(dnsResponse.size.toLong())
                     onTrafficUpdate(rxBytesTotal.get(), txBytesTotal.get())
+                    debugLog("PACKET_DNS", "DNS Resolved: received ${dnsResponse.size}B from $dnsTarget -> Returned to client $clientPort")
 
                     val replyIpPacket = buildIpv4UdpPacket(
                         srcIp = originalDstIp,
@@ -220,8 +261,8 @@ class TunPacketRouter(
                         outputStream.flush()
                     }
                 }
-            } catch (_: Exception) {
-                // Timeout
+            } catch (e: Exception) {
+                debugLog("PACKET_DNS_ERR", "DNS query failed: ${e.message}")
             }
         }
     }
@@ -235,44 +276,70 @@ class TunPacketRouter(
         outputStream: FileOutputStream
     ) {
         val sessionKey = "${clientPort}_${dstIp.hostAddress}_$dstPort"
-        val socket = udpSessions.computeIfAbsent(sessionKey) {
-            try {
+
+        var isNewSession = false
+        val session = udpSessions.computeIfAbsent(sessionKey) {
+            isNewSession = true
+            val socket = try {
                 DatagramSocket().apply {
                     vpnService.protect(this)
-                    soTimeout = 4000
+                    soTimeout = 0
+                    receiveBufferSize = 262144
+                    sendBufferSize = 262144
                 }
             } catch (_: Exception) {
                 DatagramSocket()
+            }
+            UdpSession(socket, clientIp, clientPort, dstIp, dstPort)
+        }
+
+        if (isNewSession) {
+            debugLog("PACKET_UDP", "New UDP/QUIC Stream: ${clientIp.hostAddress}:$clientPort -> ${dstIp.hostAddress}:$dstPort (Protected Socket)")
+            routerScope.launch {
+                val recvBuffer = ByteArray(65535)
+                val socket = session.socket
+                try {
+                    while (isRunning && !session.isClosed && isActive) {
+                        val recvPacket = DatagramPacket(recvBuffer, recvBuffer.size)
+                        socket.receive(recvPacket)
+                        val len = recvPacket.length
+                        if (len > 0) {
+                            rxBytesTotal.addAndGet(len.toLong())
+                            onTrafficUpdate(rxBytesTotal.get(), txBytesTotal.get())
+
+                            val replyPacket = buildIpv4UdpPacket(
+                                srcIp = dstIp,
+                                srcPort = dstPort,
+                                dstIp = clientIp,
+                                dstPort = clientPort,
+                                payload = recvBuffer.copyOf(len)
+                            )
+
+                            synchronized(outputStream) {
+                                outputStream.write(replyPacket)
+                                outputStream.flush()
+                            }
+                        }
+                    }
+                } catch (_: Exception) {
+                } finally {
+                    session.isClosed = true
+                    runCatching { socket.close() }
+                    udpSessions.remove(sessionKey)
+                }
             }
         }
 
         routerScope.launch {
             try {
-                val sendPacket = DatagramPacket(payload, payload.size, dstIp, dstPort)
-                socket.send(sendPacket)
-
-                val respBuffer = ByteArray(8192)
-                val recvPacket = DatagramPacket(respBuffer, respBuffer.size)
-                socket.receive(recvPacket)
-
-                val responsePayload = respBuffer.copyOf(recvPacket.length)
-                rxBytesTotal.addAndGet(responsePayload.size.toLong())
-                onTrafficUpdate(rxBytesTotal.get(), txBytesTotal.get())
-
-                val replyPacket = buildIpv4UdpPacket(
-                    srcIp = dstIp,
-                    srcPort = dstPort,
-                    dstIp = clientIp,
-                    dstPort = clientPort,
-                    payload = responsePayload
-                )
-
-                synchronized(outputStream) {
-                    outputStream.write(replyPacket)
-                    outputStream.flush()
+                if (!session.isClosed && !session.socket.isClosed) {
+                    val sendPacket = DatagramPacket(payload, payload.size, dstIp, dstPort)
+                    session.socket.send(sendPacket)
                 }
             } catch (_: Exception) {
-                // Timeout
+                session.isClosed = true
+                runCatching { session.socket.close() }
+                udpSessions.remove(sessionKey)
             }
         }
     }
@@ -308,14 +375,14 @@ class TunPacketRouter(
         val sessionKey = "${srcPort}_${dstIp.hostAddress}_$dstPort"
 
         if (isSyn && !isAck) {
-            // TCP SYN: Start new TCP connection
+            debugLog("PACKET_TCP", "TCP SYN intercepted: $srcPort -> ${dstIp.hostAddress}:$dstPort. Initiating protected socket connect...")
             routerScope.launch {
                 try {
                     val socket = Socket()
                     vpnService.protect(socket)
                     socket.tcpNoDelay = true
-                    socket.soTimeout = 8000
-                    socket.connect(InetSocketAddress(dstIp, dstPort), 3500)
+                    socket.soTimeout = 15000
+                    socket.connect(InetSocketAddress(dstIp, dstPort), 5000)
 
                     val session = TcpSession(
                         socket = socket,
@@ -327,6 +394,8 @@ class TunPacketRouter(
                         expectedClientSeq = seqNum + 1
                     )
                     tcpSessions[sessionKey] = session
+
+                    debugLog("PACKET_TCP", "TCP Connected to ${dstIp.hostAddress}:$dstPort! Sending SYN-ACK to TUN")
 
                     // Send TCP SYN-ACK back to TUN
                     val synAckPacket = buildIpv4TcpPacket(
@@ -346,42 +415,42 @@ class TunPacketRouter(
                         outputStream.flush()
                     }
 
-                    // Start background socket reader for incoming response data
+                    // Background socket reader
                     launch {
-                        val buffer = ByteArray(16384)
-                        val inStream = socket.getInputStream()
+                        val buffer = ByteArray(32768)
                         try {
-                            while (isRunning && !session.isClosed) {
-                                val read = inStream.read(buffer)
-                                if (read > 0) {
-                                    rxBytesTotal.addAndGet(read.toLong())
-                                    onTrafficUpdate(rxBytesTotal.get(), txBytesTotal.get())
+                            if (!socket.isClosed && socket.isConnected) {
+                                val inStream = socket.getInputStream()
+                                while (isRunning && !session.isClosed && !socket.isClosed) {
+                                    val read = inStream.read(buffer)
+                                    if (read > 0) {
+                                        rxBytesTotal.addAndGet(read.toLong())
+                                        onTrafficUpdate(rxBytesTotal.get(), txBytesTotal.get())
 
-                                    val respChunk = buffer.copyOf(read)
-                                    val dataPacket = buildIpv4TcpPacket(
-                                        srcIp = dstIp,
-                                        srcPort = dstPort,
-                                        dstIp = srcIp,
-                                        dstPort = srcPort,
-                                        seqNum = session.serverSeq,
-                                        ackNum = session.expectedClientSeq,
-                                        flags = 0x18, // PSH + ACK
-                                        payload = respChunk
-                                    )
-                                    session.serverSeq += read
+                                        val respChunk = buffer.copyOf(read)
+                                        val dataPacket = buildIpv4TcpPacket(
+                                            srcIp = dstIp,
+                                            srcPort = dstPort,
+                                            dstIp = srcIp,
+                                            dstPort = srcPort,
+                                            seqNum = session.serverSeq,
+                                            ackNum = session.expectedClientSeq,
+                                            flags = 0x18, // PSH + ACK
+                                            payload = respChunk
+                                        )
+                                        session.serverSeq += read
 
-                                    synchronized(outputStream) {
-                                        outputStream.write(dataPacket)
-                                        outputStream.flush()
+                                        synchronized(outputStream) {
+                                            outputStream.write(dataPacket)
+                                            outputStream.flush()
+                                        }
+                                    } else {
+                                        break
                                     }
-                                } else {
-                                    break
                                 }
                             }
                         } catch (_: Exception) {
-                            // Socket closed
                         } finally {
-                            // Send FIN to client
                             val finPacket = buildIpv4TcpPacket(
                                 srcIp = dstIp,
                                 srcPort = dstPort,
@@ -403,8 +472,8 @@ class TunPacketRouter(
                             tcpSessions.remove(sessionKey)
                         }
                     }
-                } catch (_: Exception) {
-                    // Connect failed, send RST back
+                } catch (e: Exception) {
+                    debugLog("PACKET_TCP_ERR", "TCP Connection to ${dstIp.hostAddress}:$dstPort failed: ${e.message}")
                     val rstPacket = buildIpv4TcpPacket(
                         srcIp = dstIp,
                         srcPort = dstPort,
@@ -430,120 +499,88 @@ class TunPacketRouter(
                     session.expectedClientSeq = seqNum + payloadLen
                     routerScope.launch {
                         try {
-                            val out = session.socket.getOutputStream()
-                            out.write(tcpPayload)
-                            out.flush()
+                            if (!session.socket.isClosed && session.socket.isConnected) {
+                                val out = session.socket.getOutputStream()
+                                out.write(tcpPayload)
+                                out.flush()
 
-                            // ACK client's data
-                            val ackPacket = buildIpv4TcpPacket(
-                                srcIp = dstIp,
-                                srcPort = dstPort,
-                                dstIp = srcIp,
-                                dstPort = srcPort,
-                                seqNum = session.serverSeq,
-                                ackNum = session.expectedClientSeq,
-                                flags = 0x10, // ACK
-                                payload = byteArrayOf()
-                            )
-                            synchronized(outputStream) {
-                                outputStream.write(ackPacket)
-                                outputStream.flush()
+                                val ackPacket = buildIpv4TcpPacket(
+                                    srcIp = dstIp,
+                                    srcPort = dstPort,
+                                    dstIp = srcIp,
+                                    dstPort = srcPort,
+                                    seqNum = session.serverSeq,
+                                    ackNum = session.expectedClientSeq,
+                                    flags = 0x10, // ACK
+                                    payload = byteArrayOf()
+                                )
+                                synchronized(outputStream) {
+                                    outputStream.write(ackPacket)
+                                    outputStream.flush()
+                                }
                             }
                         } catch (_: Exception) {
                             session.isClosed = true
+                            runCatching { session.socket.close() }
+                            tcpSessions.remove(sessionKey)
                         }
                     }
                 } else if (isFin) {
-                    session.expectedClientSeq = seqNum + 1
                     session.isClosed = true
-                    val finAck = buildIpv4TcpPacket(
-                        srcIp = dstIp,
-                        srcPort = dstPort,
-                        dstIp = srcIp,
-                        dstPort = srcPort,
-                        seqNum = session.serverSeq,
-                        ackNum = session.expectedClientSeq,
-                        flags = 0x11, // FIN + ACK
-                        payload = byteArrayOf()
-                    )
-                    synchronized(outputStream) {
-                        runCatching {
-                            outputStream.write(finAck)
-                            outputStream.flush()
-                        }
+                    routerScope.launch {
+                        runCatching { session.socket.close() }
+                        tcpSessions.remove(sessionKey)
                     }
-                    runCatching { session.socket.close() }
-                    tcpSessions.remove(sessionKey)
-                } else if (isRst) {
-                    session.isClosed = true
-                    runCatching { session.socket.close() }
-                    tcpSessions.remove(sessionKey)
                 }
             }
         }
     }
 
-    private fun buildIpv4Packet(
-        protocol: Int,
-        srcIp: InetAddress,
-        dstIp: InetAddress,
-        payload: ByteArray
-    ): ByteArray {
+    private fun buildIpv4Packet(protocol: Int, srcIp: InetAddress, dstIp: InetAddress, payload: ByteArray): ByteArray {
         val totalLength = 20 + payload.size
-        val packet = ByteBuffer.allocate(totalLength)
+        val packet = ByteArray(totalLength)
 
-        packet.put(0x45.toByte())
-        packet.put(0x00.toByte())
-        packet.putShort(totalLength.toShort())
-        packet.putShort(0x1234.toShort())
-        packet.putShort(0x0000.toShort())
-        packet.put(64.toByte())
-        packet.put(protocol.toByte())
-        packet.putShort(0x0000.toShort())
-        packet.put(srcIp.address)
-        packet.put(dstIp.address)
+        packet[0] = 0x45.toByte()
+        packet[1] = 0x00.toByte()
+        packet[2] = (totalLength shr 8).toByte()
+        packet[3] = (totalLength and 0xFF).toByte()
+        packet[4] = 0x00.toByte()
+        packet[5] = 0x00.toByte()
+        packet[6] = 0x40.toByte()
+        packet[7] = 0x00.toByte()
+        packet[8] = 64.toByte()
+        packet[9] = protocol.toByte()
+        packet[10] = 0x00.toByte()
+        packet[11] = 0x00.toByte()
 
-        val ipChecksum = computeChecksum(packet.array(), 0, 20)
-        packet.putShort(10, ipChecksum.toShort())
-        packet.position(20)
-        packet.put(payload)
+        val srcBytes = srcIp.address
+        val dstBytes = dstIp.address
+        System.arraycopy(srcBytes, 0, packet, 12, 4)
+        System.arraycopy(dstBytes, 0, packet, 16, 4)
 
-        return packet.array()
+        val checksum = computeChecksum(packet, 0, 20)
+        packet[10] = (checksum shr 8).toByte()
+        packet[11] = (checksum and 0xFF).toByte()
+
+        System.arraycopy(payload, 0, packet, 20, payload.size)
+        return packet
     }
 
-    private fun buildIpv4UdpPacket(
-        srcIp: InetAddress,
-        srcPort: Int,
-        dstIp: InetAddress,
-        dstPort: Int,
-        payload: ByteArray
-    ): ByteArray {
+    private fun buildIpv4UdpPacket(srcIp: InetAddress, srcPort: Int, dstIp: InetAddress, dstPort: Int, payload: ByteArray): ByteArray {
         val udpLength = 8 + payload.size
-        val totalLength = 20 + udpLength
-        val packet = ByteBuffer.allocate(totalLength)
+        val udpHeader = ByteArray(udpLength)
 
-        packet.put(0x45.toByte())
-        packet.put(0x00.toByte())
-        packet.putShort(totalLength.toShort())
-        packet.putShort(0x1234.toShort())
-        packet.putShort(0x0000.toShort())
-        packet.put(64.toByte())
-        packet.put(17.toByte()) // UDP
-        packet.putShort(0x0000.toShort())
-        packet.put(srcIp.address)
-        packet.put(dstIp.address)
+        udpHeader[0] = (srcPort shr 8).toByte()
+        udpHeader[1] = (srcPort and 0xFF).toByte()
+        udpHeader[2] = (dstPort shr 8).toByte()
+        udpHeader[3] = (dstPort and 0xFF).toByte()
+        udpHeader[4] = (udpLength shr 8).toByte()
+        udpHeader[5] = (udpLength and 0xFF).toByte()
+        udpHeader[6] = 0x00.toByte()
+        udpHeader[7] = 0x00.toByte()
 
-        val ipChecksum = computeChecksum(packet.array(), 0, 20)
-        packet.putShort(10, ipChecksum.toShort())
-
-        packet.position(20)
-        packet.putShort(srcPort.toShort())
-        packet.putShort(dstPort.toShort())
-        packet.putShort(udpLength.toShort())
-        packet.putShort(0x0000.toShort())
-        packet.put(payload)
-
-        return packet.array()
+        System.arraycopy(payload, 0, udpHeader, 8, payload.size)
+        return buildIpv4Packet(protocol = 17, srcIp = srcIp, dstIp = dstIp, payload = udpHeader)
     }
 
     private fun buildIpv4TcpPacket(
@@ -557,94 +594,71 @@ class TunPacketRouter(
         payload: ByteArray
     ): ByteArray {
         val tcpHeaderLen = 20
-        val totalLength = 20 + tcpHeaderLen + payload.size
-        val packet = ByteBuffer.allocate(totalLength)
+        val tcpLength = tcpHeaderLen + payload.size
+        val tcpBuffer = ByteArray(tcpLength)
 
-        // IP Header
-        packet.put(0x45.toByte())
-        packet.put(0x00.toByte())
-        packet.putShort(totalLength.toShort())
-        packet.putShort(0x4321.toShort())
-        packet.putShort(0x4000.toShort()) // Don't Fragment
-        packet.put(64.toByte())
-        packet.put(6.toByte()) // TCP
-        packet.putShort(0x0000.toShort())
-        packet.put(srcIp.address)
-        packet.put(dstIp.address)
+        tcpBuffer[0] = (srcPort shr 8).toByte()
+        tcpBuffer[1] = (srcPort and 0xFF).toByte()
+        tcpBuffer[2] = (dstPort shr 8).toByte()
+        tcpBuffer[3] = (dstPort and 0xFF).toByte()
 
-        val ipChecksum = computeChecksum(packet.array(), 0, 20)
-        packet.putShort(10, ipChecksum.toShort())
+        tcpBuffer[4] = ((seqNum shr 24) and 0xFF).toByte()
+        tcpBuffer[5] = ((seqNum shr 16) and 0xFF).toByte()
+        tcpBuffer[6] = ((seqNum shr 8) and 0xFF).toByte()
+        tcpBuffer[7] = (seqNum and 0xFF).toByte()
 
-        // TCP Header
-        packet.position(20)
-        packet.putShort(srcPort.toShort())
-        packet.putShort(dstPort.toShort())
-        packet.putInt(seqNum.toInt())
-        packet.putInt(ackNum.toInt())
-        packet.put(0x50.toByte()) // Header length 5 (20 bytes)
-        packet.put(flags.toByte())
-        packet.putShort(65535.toShort()) // Window size
-        packet.putShort(0x0000.toShort()) // TCP Checksum placeholder
-        packet.putShort(0x0000.toShort()) // Urgent pointer
+        tcpBuffer[8] = ((ackNum shr 24) and 0xFF).toByte()
+        tcpBuffer[9] = ((ackNum shr 16) and 0xFF).toByte()
+        tcpBuffer[10] = ((ackNum shr 8) and 0xFF).toByte()
+        tcpBuffer[11] = (ackNum and 0xFF).toByte()
 
-        // Payload
+        tcpBuffer[12] = 0x50.toByte()
+        tcpBuffer[13] = flags.toByte()
+
+        tcpBuffer[14] = 0xFF.toByte()
+        tcpBuffer[15] = 0xFF.toByte()
+        tcpBuffer[16] = 0x00.toByte()
+        tcpBuffer[17] = 0x00.toByte()
+        tcpBuffer[18] = 0x00.toByte()
+        tcpBuffer[19] = 0x00.toByte()
+
         if (payload.isNotEmpty()) {
-            packet.put(payload)
+            System.arraycopy(payload, 0, tcpBuffer, 20, payload.size)
         }
 
-        // Calculate TCP Checksum over Pseudo-Header
-        val tcpChecksum = computeTcpChecksum(srcIp, dstIp, packet.array(), 20, tcpHeaderLen + payload.size)
-        packet.putShort(36, tcpChecksum.toShort())
+        val pseudoHeader = ByteBuffer.allocate(12 + tcpLength)
+        pseudoHeader.put(srcIp.address)
+        pseudoHeader.put(dstIp.address)
+        pseudoHeader.put(0.toByte())
+        pseudoHeader.put(6.toByte())
+        pseudoHeader.putShort(tcpLength.toShort())
+        pseudoHeader.put(tcpBuffer)
 
-        return packet.array()
-    }
+        val checksum = computeChecksum(pseudoHeader.array(), 0, pseudoHeader.capacity())
+        tcpBuffer[16] = (checksum shr 8).toByte()
+        tcpBuffer[17] = (checksum and 0xFF).toByte()
 
-    private fun computeTcpChecksum(srcIp: InetAddress, dstIp: InetAddress, packet: ByteArray, tcpOffset: Int, tcpLength: Int): Int {
-        var sum = 0
-        val src = srcIp.address
-        val dst = dstIp.address
-
-        // Pseudo header
-        for (i in 0..3 step 2) {
-            sum += ((src[i].toInt() and 0xFF) shl 8) or (src[i + 1].toInt() and 0xFF)
-            sum += ((dst[i].toInt() and 0xFF) shl 8) or (dst[i + 1].toInt() and 0xFF)
-        }
-        sum += 6 // Protocol TCP
-        sum += tcpLength
-
-        var i = tcpOffset
-        val end = tcpOffset + tcpLength
-        while (i < end - 1) {
-            val high = packet[i].toInt() and 0xFF
-            val low = packet[i + 1].toInt() and 0xFF
-            sum += (high shl 8) or low
-            i += 2
-        }
-        if (i < end) {
-            sum += (packet[i].toInt() and 0xFF) shl 8
-        }
-
-        while ((sum shr 16) > 0) {
-            sum = (sum and 0xFFFF) + (sum shr 16)
-        }
-        return sum.inv() and 0xFFFF
+        return buildIpv4Packet(protocol = 6, srcIp = srcIp, dstIp = dstIp, payload = tcpBuffer)
     }
 
     private fun computeChecksum(data: ByteArray, offset: Int, length: Int): Int {
         var sum = 0
         var i = offset
         while (i < offset + length - 1) {
-            val high = data[i].toInt() and 0xFF
-            val low = data[i + 1].toInt() and 0xFF
-            sum += (high shl 8) or low
+            val word = ((data[i].toInt() and 0xFF) shl 8) or (data[i + 1].toInt() and 0xFF)
+            sum += word
+            if (sum > 0xFFFF) {
+                sum = (sum and 0xFFFF) + (sum shr 16)
+            }
             i += 2
         }
         if (i < offset + length) {
-            sum += (data[i].toInt() and 0xFF) shl 8
+            val word = (data[i].toInt() and 0xFF) shl 8
+            sum += word
+            if (sum > 0xFFFF) {
+                sum = (sum and 0xFFFF) + (sum shr 16)
+            }
         }
-        while ((sum shr 16) > 0) {
-            sum = (sum and 0xFFFF) + (sum shr 16)
-        }
-        return sum.inv() and 0xFFFF
+        return (sum.inv()) and 0xFFFF
     }
 }

@@ -57,6 +57,8 @@ class DashboardViewModel(
 
     val appStats: StateFlow<List<AppTrafficStat>> = App.instance.appTrafficTracker.appStats
 
+    val tunnelLogs: StateFlow<List<String>> = App.instance.tunnelManager.logs
+
     val configs: StateFlow<List<AwgConfig>> = configRepository.getAllConfigs()
         .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
 
@@ -64,11 +66,8 @@ class DashboardViewModel(
     val uiState: StateFlow<DashboardUiState> = _uiState.asStateFlow()
 
     init {
-        // Initial service status check and app traffic refresh
+        // Initial service status check
         checkBlockedServices()
-        viewModelScope.launch {
-            App.instance.appTrafficTracker.refreshOnce()
-        }
     }
 
     fun selectConfig(config: AwgConfig) {
@@ -225,6 +224,10 @@ class DashboardViewModel(
 
     fun clearMessage() {
         _uiState.value = _uiState.value.copy(userMessage = null)
+    }
+
+    fun clearTunnelLogs() {
+        App.instance.tunnelManager.clearLogs()
     }
 }
 

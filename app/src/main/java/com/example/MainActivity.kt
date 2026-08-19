@@ -23,12 +23,6 @@ class MainActivity : ComponentActivity() {
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
 
-        // Prepare VPN permission prompt if needed
-        val prepareIntent = VpnService.prepare(this)
-        if (prepareIntent != null) {
-            vpnPermissionLauncher.launch(prepareIntent)
-        }
-
         setContent {
             MyApplicationTheme {
                 AppNavigation()

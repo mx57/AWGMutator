@@ -66,6 +66,12 @@ fun SettingsScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val appStats by viewModel.appStats.collectAsStateWithLifecycle()
 
+    LaunchedEffect(Unit) {
+        if (uiState.installedApps.isEmpty()) {
+            viewModel.loadInstalledApps()
+        }
+    }
+
     LaunchedEffect(uiState.userMessage) {
         uiState.userMessage?.let {
             snackbarHostState.showSnackbar(it)

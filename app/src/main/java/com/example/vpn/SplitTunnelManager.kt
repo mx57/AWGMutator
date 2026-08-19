@@ -1,6 +1,7 @@
 package com.example.vpn
 
 import android.content.Context
+import android.content.Intent
 import android.content.SharedPreferences
 import android.content.pm.ApplicationInfo
 import android.graphics.drawable.Drawable
@@ -52,20 +53,30 @@ class SplitTunnelManager(private val context: Context) {
 
     fun getInstalledApps(): List<InstalledApp> {
         val pm = context.packageManager
-        // Query basic info with 0 flags to prevent ashmem IPC allocations on Android Q+
-        val packages = pm.getInstalledApplications(0)
+        val mainIntent = Intent(Intent.ACTION_MAIN, null).apply {
+            addCategory(Intent.CATEGORY_LAUNCHER)
+        }
+        val launcherApps = try {
+            pm.queryIntentActivities(mainIntent, 0)
+        } catch (_: Exception) {
+            emptyList()
+        }
+        val seenPackages = mutableSetOf<String>()
         val list = mutableListOf<InstalledApp>()
 
-        for (appInfo in packages) {
-            // Skip this app itself from listing
-            if (appInfo.packageName == context.packageName) continue
+        for (resolveInfo in launcherApps) {
+            val appInfo = resolveInfo.activityInfo?.applicationInfo ?: continue
+            val pkg = appInfo.packageName ?: continue
+            if (pkg == context.packageName || !seenPackages.add(pkg)) continue
 
-            val appName = runCatching { pm.getApplicationLabel(appInfo).toString() }.getOrDefault(appInfo.packageName)
+            val appName = resolveInfo.activityInfo?.nonLocalizedLabel?.toString()
+                ?: runCatching { resolveInfo.loadLabel(pm).toString() }.getOrNull()
+                ?: formatAppName(pkg)
             val isSystem = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
 
             list.add(
                 InstalledApp(
-                    packageName = appInfo.packageName,
+                    packageName = pkg,
                     appName = appName,
                     isSystemApp = isSystem,
                     icon = null
@@ -73,9 +84,49 @@ class SplitTunnelManager(private val context: Context) {
             )
         }
 
+        // Add any selected packages or popular packages
+        val extraPackages = getSelectedPackages() + listOf(
+            "com.google.android.youtube",
+            "com.android.chrome",
+            "org.telegram.messenger"
+        )
+
+        for (pkg in extraPackages) {
+            if (seenPackages.add(pkg)) {
+                val appInfo = runCatching { pm.getApplicationInfo(pkg, 0) }.getOrNull()
+                if (appInfo != null && appInfo.packageName != context.packageName) {
+                    val appName = appInfo.nonLocalizedLabel?.toString()
+                        ?: runCatching { pm.getApplicationLabel(appInfo).toString() }.getOrNull()
+                        ?: formatAppName(pkg)
+                    val isSystem = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
+                    list.add(
+                        InstalledApp(
+                            packageName = pkg,
+                            appName = appName,
+                            isSystemApp = isSystem,
+                            icon = null
+                        )
+                    )
+                }
+            }
+        }
+
         return list.sortedWith(
             compareBy<InstalledApp> { it.isSystemApp }
                 .thenBy { it.appName.lowercase() }
         )
+    }
+
+    private fun formatAppName(packageName: String): String {
+        return when {
+            packageName.contains("youtube", ignoreCase = true) -> "YouTube"
+            packageName.contains("chrome", ignoreCase = true) -> "Google Chrome"
+            packageName.contains("telegram", ignoreCase = true) -> "Telegram"
+            packageName.contains("whatsapp", ignoreCase = true) -> "WhatsApp"
+            packageName.contains("instagram", ignoreCase = true) -> "Instagram"
+            packageName.contains("spotify", ignoreCase = true) -> "Spotify"
+            packageName.contains("tiktok", ignoreCase = true) || packageName.contains("musically", ignoreCase = true) -> "TikTok"
+            else -> packageName.substringAfterLast('.').replaceFirstChar { it.uppercase() }
+        }
     }
 }

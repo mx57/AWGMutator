@@ -92,6 +92,7 @@ fun DashboardScreen(
     val configs by viewModel.configs.collectAsStateWithLifecycle()
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val appStats by viewModel.appStats.collectAsStateWithLifecycle()
+    val tunnelLogs by viewModel.tunnelLogs.collectAsStateWithLifecycle()
 
     LaunchedEffect(uiState.userMessage) {
         uiState.userMessage?.let {
@@ -444,6 +445,15 @@ fun DashboardScreen(
         AppTrafficDashboardCard(
             appStats = appStats,
             onOpenSplitTunnelSettings = onNavigateToSettings
+        )
+
+        Spacer(modifier = Modifier.height(14.dp))
+
+        // Tunnel Routing & Packet Flow Diagnostics Card
+        PacketDiagnosticsCard(
+            vpnStatus = vpnStatus,
+            tunnelLogs = tunnelLogs,
+            onClearLogs = { viewModel.clearTunnelLogs() }
         )
 
         Spacer(modifier = Modifier.height(16.dp))
