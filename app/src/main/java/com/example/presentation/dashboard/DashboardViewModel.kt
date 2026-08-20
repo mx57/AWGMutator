@@ -251,6 +251,26 @@ class DashboardViewModel(
         }
     }
 
+    fun fixBlockedEndpointAndReconnect(context: Context) {
+        val currentConfig = _uiState.value.selectedConfig ?: configs.value.firstOrNull() ?: return
+        viewModelScope.launch {
+            val cleanEndpoint = "188.114.97.1:854"
+            val cleanDns = if (currentConfig.dns.isBlank() || currentConfig.dns.contains("111.88")) "1.1.1.1, 1.0.0.1" else currentConfig.dns
+            val updatedConfig = currentConfig.copy(
+                endpoint = cleanEndpoint,
+                dns = cleanDns
+            )
+            configRepository.updateConfig(updatedConfig)
+            _uiState.value = _uiState.value.copy(
+                selectedConfig = updatedConfig,
+                userMessage = "Эндпоинт обновлен на $cleanEndpoint. Выполняется переподключение..."
+            )
+            App.instance.tunnelManager.disconnect()
+            kotlinx.coroutines.delay(700)
+            App.instance.tunnelManager.connect(updatedConfig)
+        }
+    }
+
     fun clearMessage() {
         _uiState.value = _uiState.value.copy(userMessage = null)
     }

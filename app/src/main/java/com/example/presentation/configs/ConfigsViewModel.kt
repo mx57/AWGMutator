@@ -372,6 +372,20 @@ class ConfigsViewModel(
         }
     }
 
+    fun fixConfigEndpoint(config: AwgConfig) {
+        viewModelScope.launch(Dispatchers.IO) {
+            val cleanEndpoint = "188.114.97.1:854"
+            val cleanDns = if (config.dns.isBlank() || config.dns.contains("111.88")) "1.1.1.1, 1.0.0.1" else config.dns
+            val updated = config.copy(endpoint = cleanEndpoint, dns = cleanDns)
+            configRepository.updateConfig(updated)
+            withContext(Dispatchers.Main) {
+                _uiState.value = _uiState.value.copy(
+                    userMessage = "Эндпоинт '${config.name}' обновлен на чистый $cleanEndpoint!"
+                )
+            }
+        }
+    }
+
     fun clearMessage() {
         _uiState.value = _uiState.value.copy(userMessage = null)
     }

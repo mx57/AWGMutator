@@ -5,7 +5,9 @@ import android.content.ClipboardManager
 import android.content.Context
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.ui.draw.clip
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -286,7 +288,8 @@ fun ConfigsScreen(
                             onDuplicate = { viewModel.duplicateConfig(config) },
                             onShare = { viewModel.shareConfigFile(context, config) },
                             onShowQr = { viewModel.showQrDialog(config) },
-                            onShowExport = { viewModel.showExportDialog(config) }
+                            onShowExport = { viewModel.showExportDialog(config) },
+                            onFixEndpoint = { viewModel.fixConfigEndpoint(config) }
                         )
                     }
                     item {
@@ -378,7 +381,8 @@ fun CompactConfigCard(
     onDuplicate: () -> Unit,
     onShare: () -> Unit,
     onShowQr: () -> Unit,
-    onShowExport: () -> Unit
+    onShowExport: () -> Unit,
+    onFixEndpoint: () -> Unit
 ) {
     Card(
         modifier = Modifier
@@ -438,8 +442,33 @@ fun CompactConfigCard(
                 Text(
                     text = config.endpoint,
                     style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace, fontSize = 12.sp),
-                    color = CyberCyan
+                    color = if (config.endpoint.startsWith("162.159.192") || config.endpoint.startsWith("162.159.193")) DangerRed else CyberCyan
                 )
+            }
+
+            if (config.endpoint.startsWith("162.159.192") || config.endpoint.startsWith("162.159.193") || config.dns.contains("111.88")) {
+                Spacer(modifier = Modifier.height(4.dp))
+                Row(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(6.dp))
+                        .background(DangerRed.copy(alpha = 0.15f))
+                        .padding(horizontal = 8.dp, vertical = 2.dp),
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.SpaceBetween
+                ) {
+                    Text(
+                        text = "⚠️ Заблокирован провайдером",
+                        style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.SemiBold, fontSize = 11.sp),
+                        color = DangerRed
+                    )
+                    TextButton(
+                        onClick = onFixEndpoint,
+                        modifier = Modifier.height(26.dp)
+                    ) {
+                        Text("⚡ Заменить на чистый (188.114.97.1)", style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold), color = CyberCyan)
+                    }
+                }
             }
 
             Spacer(modifier = Modifier.height(6.dp))

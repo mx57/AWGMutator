@@ -92,8 +92,8 @@ android {
     debug { signingConfig = signingConfigs.getByName("debugConfig") }
   }
   compileOptions {
-    sourceCompatibility = JavaVersion.VERSION_11
-    targetCompatibility = JavaVersion.VERSION_11
+    sourceCompatibility = JavaVersion.VERSION_17
+    targetCompatibility = JavaVersion.VERSION_17
   }
   buildFeatures {
     compose = true
@@ -160,6 +160,7 @@ dependencies {
   implementation(libs.moshi.kotlin)
   implementation(libs.okhttp)
   implementation(libs.wireguard.tunnel)
+  implementation(libs.amneziawg.android)
   // implementation(libs.play.services.location)
   implementation(libs.retrofit)
   testImplementation(libs.androidx.compose.ui.test.junit4)

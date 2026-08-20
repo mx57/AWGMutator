@@ -39,6 +39,7 @@ import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.Tune
+import androidx.compose.material.icons.filled.Warning
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -358,6 +359,48 @@ fun DashboardScreen(
                                 }
                             )
                         }
+                    }
+                }
+            }
+        }
+
+        val isHandshakeBlocked = (vpnStatus.state == VpnState.CONNECTED && vpnStatus.txBytes > 100 && vpnStatus.rxBytes == 0L) ||
+                (activeConfig != null && (activeConfig.endpoint.startsWith("162.159.192") || activeConfig.endpoint.startsWith("162.159.193")))
+
+        if (isHandshakeBlocked) {
+            Spacer(modifier = Modifier.height(12.dp))
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(12.dp),
+                colors = CardDefaults.cardColors(containerColor = DangerRed.copy(alpha = 0.15f)),
+                border = BorderStroke(1.dp, DangerRed)
+            ) {
+                Column(modifier = Modifier.padding(14.dp)) {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        Icon(Icons.Default.Warning, contentDescription = null, tint = DangerRed)
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = "Обнаружена блокировка DPI (Tx > 0, Rx = 0)",
+                            style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
+                            color = DangerRed
+                        )
+                    }
+                    Spacer(modifier = Modifier.height(6.dp))
+                    Text(
+                        text = "Эндпоинт '${activeConfig?.endpoint}' заблокирован провайдером / ТСПУ (пакеты рукопожатия не получают ответа). Нажмите кнопку ниже, чтобы автоматически переключить на рабочий незаблокированный эндпоинт 188.114.97.1:854.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Button(
+                        onClick = { viewModel.fixBlockedEndpointAndReconnect(context) },
+                        colors = ButtonDefaults.buttonColors(containerColor = DangerRed, contentColor = Color.White),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("⚡ Заменить на чистый эндпоинт и переподключить", fontWeight = FontWeight.Bold)
                     }
                 }
             }
