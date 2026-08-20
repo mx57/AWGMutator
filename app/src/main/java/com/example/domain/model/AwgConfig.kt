@@ -58,44 +58,48 @@ data class AwgConfig(
         val builder = StringBuilder()
         builder.appendLine("[Interface]")
         builder.appendLine("PrivateKey = $privateKey")
-        // Clean address string to avoid duplicate CIDR suffixes like /32/32 or /128/128
+
         val cleanAddr = address.split(",")
             .map { it.trim() }
+            .filter { it.isNotBlank() }
             .map { addr ->
-                var a = addr
-                while (a.endsWith("/32/32")) a = a.replace("/32/32", "/32")
-                while (a.endsWith("/128/128")) a = a.replace("/128/128", "/128")
-                a
+                if (addr.contains("/")) addr
+                else if (addr.contains(":")) "$addr/128"
+                else "$addr/32"
             }.joinToString(", ")
+
         builder.appendLine("Address = $cleanAddr")
-        builder.appendLine("DNS = $dns")
-        builder.appendLine("MTU = $mtu")
-        builder.appendLine("S1 = $s1")
-        builder.appendLine("S2 = $s2")
-        builder.appendLine("S3 = $s3")
-        builder.appendLine("S4 = $s4")
-        builder.appendLine("Jc = $jc")
-        builder.appendLine("Jmin = $jmin")
-        builder.appendLine("Jmax = $jmax")
-        builder.appendLine("H1 = $h1")
-        builder.appendLine("H2 = $h2")
-        builder.appendLine("H3 = $h3")
-        builder.appendLine("H4 = $h4")
-        if (!i1.isNullOrBlank()) {
-            builder.appendLine("I1 = $i1")
+        if (dns.isNotBlank()) {
+            builder.appendLine("DNS = $dns")
         }
-        if (!i2.isNullOrBlank()) {
-            builder.appendLine("I2 = $i2")
+        if (mtu in 1200..1500) {
+            builder.appendLine("MTU = $mtu")
         }
-        if (!i3.isNullOrBlank()) {
-            builder.appendLine("I3 = $i3")
+
+        // Only emit AmneziaWG parameters if they are actually used
+        val hasAwgParams = jc > 0 || s1 > 0 || s2 > 0 || s3 > 0 || s4 > 0 ||
+                (h1 != 0L && h1 != 1L) || (h2 != 0L && h2 != 2L) ||
+                (h3 != 0L && h3 != 3L) || (h4 != 0L && h4 != 4L)
+
+        if (hasAwgParams) {
+            if (s1 > 0) builder.appendLine("S1 = $s1")
+            if (s2 > 0) builder.appendLine("S2 = $s2")
+            if (s3 > 0) builder.appendLine("S3 = $s3")
+            if (s4 > 0) builder.appendLine("S4 = $s4")
+            if (jc > 0) builder.appendLine("Jc = $jc")
+            if (jmin > 0) builder.appendLine("Jmin = $jmin")
+            if (jmax > 0) builder.appendLine("Jmax = $jmax")
+            if (h1 > 0L) builder.appendLine("H1 = $h1")
+            if (h2 > 0L) builder.appendLine("H2 = $h2")
+            if (h3 > 0L) builder.appendLine("H3 = $h3")
+            if (h4 > 0L) builder.appendLine("H4 = $h4")
+            if (!i1.isNullOrBlank()) builder.appendLine("I1 = $i1")
+            if (!i2.isNullOrBlank()) builder.appendLine("I2 = $i2")
+            if (!i3.isNullOrBlank()) builder.appendLine("I3 = $i3")
+            if (!i4.isNullOrBlank()) builder.appendLine("I4 = $i4")
+            if (!sni.isNullOrBlank()) builder.appendLine("SNI = $sni")
         }
-        if (!i4.isNullOrBlank()) {
-            builder.appendLine("I4 = $i4")
-        }
-        if (!sni.isNullOrBlank()) {
-            builder.appendLine("SNI = $sni")
-        }
+
         if (!reserved.isNullOrBlank()) {
             builder.appendLine("Reserved = $reserved")
         }
@@ -106,8 +110,9 @@ data class AwgConfig(
         if (!presharedKey.isNullOrBlank()) {
             builder.appendLine("PresharedKey = $presharedKey")
         }
-        builder.appendLine("AllowedIPs = $allowedIps")
-        val cleanEndpoint = sanitizeEndpoint(endpoint)
+        val cleanAllowed = if (allowedIps.isNotBlank()) allowedIps else "0.0.0.0/0, ::/0"
+        builder.appendLine("AllowedIPs = $cleanAllowed")
+        val cleanEndpoint = sanitizeEndpoint(endpoint, defaultPort = if (isWarp) 854 else 51820)
         builder.appendLine("Endpoint = $cleanEndpoint")
         if (persistentKeepalive > 0) {
             builder.appendLine("PersistentKeepalive = $persistentKeepalive")
@@ -123,30 +128,30 @@ data class AwgConfig(
         val builder = StringBuilder()
         builder.appendLine("[Interface]")
         builder.appendLine("PrivateKey = $privateKey")
+
         val cleanAddr = address.split(",")
             .map { it.trim() }
             .filter { it.isNotBlank() }
             .map { addr ->
-                val pure = addr.substringBefore("/").trim()
-                val prefix = if (addr.contains("/")) addr.substringAfter("/") else if (pure.contains(":")) "128" else "32"
-                "$pure/$prefix"
+                if (addr.contains("/")) {
+                    addr
+                } else if (addr.contains(":")) {
+                    "$addr/128"
+                } else {
+                    "$addr/32"
+                }
             }.joinToString(", ")
+
         if (cleanAddr.isNotBlank()) {
             builder.appendLine("Address = $cleanAddr")
         } else {
             builder.appendLine("Address = 172.16.0.2/32")
         }
 
-        // Sanitize DNS: Ensure fast and reliable global DNS servers
-        val rawDnsList = dns.split(",").map { it.trim() }.filter { it.isNotBlank() && !it.startsWith("111.88.") }
-        val effectiveDns = if (rawDnsList.isNotEmpty()) {
-            rawDnsList.joinToString(", ")
-        } else {
-            "1.1.1.1, 8.8.8.8, 1.0.0.1"
-        }
+        val effectiveDns = dns.trim().ifBlank { "1.1.1.1, 8.8.8.8, 1.0.0.1" }
         builder.appendLine("DNS = $effectiveDns")
 
-        val effectiveMtu = if (mtu in 1280..1420) mtu else 1280
+        val effectiveMtu = if (mtu in 1200..1500) mtu else 1280
         builder.appendLine("MTU = $effectiveMtu")
 
         builder.appendLine()
@@ -157,7 +162,7 @@ data class AwgConfig(
         }
 
         val hasIpv6InAddress = cleanAddr.contains(":")
-        val rawAllowed = if (allowedIps.isNotBlank()) allowedIps else "0.0.0.0/0, ::/0"
+        val rawAllowed = if (allowedIps.isNotBlank()) allowedIps.trim() else "0.0.0.0/0, ::/0"
         val cleanAllowed = if (!hasIpv6InAddress) {
             // Prune IPv6 routes if interface has no IPv6 address to prevent blackholing
             rawAllowed.split(",")
@@ -169,8 +174,10 @@ data class AwgConfig(
             rawAllowed
         }
         builder.appendLine("AllowedIPs = $cleanAllowed")
-        val cleanEndpoint = sanitizeEndpoint(endpoint)
+
+        val cleanEndpoint = sanitizeEndpoint(endpoint, defaultPort = if (isWarp) 854 else 51820)
         builder.appendLine("Endpoint = $cleanEndpoint")
+
         if (persistentKeepalive > 0) {
             builder.appendLine("PersistentKeepalive = $persistentKeepalive")
         }
@@ -179,11 +186,11 @@ data class AwgConfig(
     }
 
     companion object {
-        fun sanitizeEndpoint(raw: String?, defaultPort: Int = 854): String {
+        fun sanitizeEndpoint(raw: String?, defaultPort: Int = 51820): String {
             val trimmed = raw?.trim().orEmpty()
             if (trimmed.isBlank()) return "188.114.97.1:$defaultPort"
 
-            // Check if IPv6 format: [2606:...]:port or [2606:...]
+            // Check if IPv6 format with brackets: [2606:...]:port or [2606:...]
             if (trimmed.startsWith("[")) {
                 val closeBracket = trimmed.indexOf(']')
                 if (closeBracket != -1) {
@@ -195,7 +202,7 @@ data class AwgConfig(
                 }
             }
 
-            // For IPv4 or host: e.g. 162.159.192.7 or 162.159.192.7:0 or 162.159.192.7:1074
+            // For IPv4 or host: e.g. 194.87.12.34:51820 or 162.159.192.7:854
             if (trimmed.count { it == ':' } == 1) {
                 val ipOrHost = trimmed.substringBefore(":")
                 val portStr = trimmed.substringAfter(":")
@@ -211,4 +218,5 @@ data class AwgConfig(
             return "[$trimmed]:$defaultPort"
         }
     }
+
 }

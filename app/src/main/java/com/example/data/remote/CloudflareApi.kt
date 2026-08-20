@@ -217,8 +217,14 @@ class CloudflareApi(
 
                     val peersArray = configObj?.optJSONArray("peers")
                     val peerObj = peersArray?.optJSONObject(0)
-                    val peerPublicKey = peerObj?.optJSONObject("public_key")?.optString("key", "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=")
-                        ?: "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo="
+                    val rawPeerKey = peerObj?.optString("public_key")
+                    val peerPublicKey = if (!rawPeerKey.isNullOrBlank()) {
+                        rawPeerKey
+                    } else {
+                        peerObj?.optJSONObject("public_key")?.optString("key", "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=")
+                            ?: "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo="
+                    }
+
                     val endpointObj = peerObj?.optJSONObject("endpoint")
                     val rawEndpointV4 = endpointObj?.optString("v4")
                     val hostEndpoint = endpointObj?.optString("host")
@@ -235,8 +241,18 @@ class CloudflareApi(
                         defaultPort = 854
                     )
 
-                    val reservedBytes = ByteArray(3).apply { Random().nextBytes(this) }
-                    val reservedBase64 = Base64.encodeToString(reservedBytes, Base64.NO_WRAP)
+                    // Extract actual client_id assigned by Cloudflare WARP backend
+                    val rawClientId = configObj?.opt("client_id")
+                        ?: interfaceObj?.opt("client_id")
+                        ?: configJson.opt("client_id")
+                        ?: regJson.opt("client_id")
+
+                    val reservedStr = when (rawClientId) {
+                        is org.json.JSONArray -> (0 until rawClientId.length()).map { rawClientId.optInt(it) }.joinToString(", ")
+                        is String -> rawClientId
+                        is Number -> rawClientId.toString()
+                        else -> null
+                    }
 
                     return@withContext Result.success(
                         WarpConfig(
@@ -248,7 +264,7 @@ class CloudflareApi(
                             v6Address = if (v6Address.contains("/")) v6Address else "$v6Address/128",
                             endpointV4 = endpointV4,
                             endpointV6 = endpointV6,
-                            reserved = reservedBase64,
+                            reserved = reservedStr ?: "12, 34, 56",
                             peerPublicKey = peerPublicKey,
                             warpPlusEnabled = !licenseKey.isNullOrBlank()
                         )

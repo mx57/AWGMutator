@@ -122,45 +122,95 @@ class PingTester(
     }
 
     /**
-     * Tests reachability and latency of a specific WireGuard / AmneziaWG endpoint (e.g. "162.159.193.1:2408").
+     * Tests real reachability and latency of a specific WireGuard / AmneziaWG endpoint (e.g. "188.114.97.1:854").
+     * Uses real ICMP ping (/system/bin/ping), TCP handshake probing, and verified socket connections.
+     * Returns true latency (e.g. 28ms, 65ms) or unreachable (null).
      */
     suspend fun testEndpoint(endpoint: String): EndpointProbeResult = withContext(Dispatchers.IO) {
         val parts = endpoint.trim().split(":")
         val host = parts[0].trim().removePrefix("[").removeSuffix("]")
-        val port = if (parts.size > 1) parts[1].toIntOrNull() ?: 2408 else 2408
+        val port = if (parts.size > 1) parts[1].toIntOrNull() ?: 854 else 854
 
+        // 1. Try real system ICMP ping first
+        val icmpPing = measureSystemPing(host)
+        if (icmpPing != null && icmpPing > 0) {
+            return@withContext EndpointProbeResult(
+                endpoint = endpoint,
+                isReachable = true,
+                latencyMs = icmpPing,
+                error = null
+            )
+        }
+
+        // 2. Try TCP handshake to specified port
+        val tcpDirect = measureTcpPing(host, port, timeoutMs = 1500)
+        if (tcpDirect != null && tcpDirect > 0) {
+            return@withContext EndpointProbeResult(
+                endpoint = endpoint,
+                isReachable = true,
+                latencyMs = tcpDirect,
+                error = null
+            )
+        }
+
+        // 3. If target port is UDP-only (e.g. 854/1074/2408/51820), probe host edge availability via HTTPS (port 443) or DNS (port 53)
+        val edgePing = measureTcpPing(host, 443, timeoutMs = 1500)
+            ?: measureTcpPing(host, 80, timeoutMs = 1500)
+            ?: measureDnsLatency(host)
+
+        if (edgePing != null && edgePing > 0) {
+            return@withContext EndpointProbeResult(
+                endpoint = endpoint,
+                isReachable = true,
+                latencyMs = edgePing,
+                error = null
+            )
+        }
+
+        // Endpoint is not responding / blocked
+        return@withContext EndpointProbeResult(
+            endpoint = endpoint,
+            isReachable = false,
+            latencyMs = null,
+            error = "Узел недоступен или заблокирован провайдером"
+        )
+    }
+
+    private fun measureSystemPing(host: String): Long? {
+        return try {
+            val process = ProcessBuilder("/system/bin/ping", "-c", "1", "-w", "2", host)
+                .redirectErrorStream(true)
+                .start()
+            val output = process.inputStream.bufferedReader().readText()
+            process.waitFor(1800, TimeUnit.MILLISECONDS)
+
+            // Look for time=XX.X ms
+            val timeMatch = Regex("time=([0-9.]+)\\s*ms").find(output)
+            if (timeMatch != null) {
+                val ms = timeMatch.groupValues[1].toDoubleOrNull()
+                if (ms != null && ms > 0) ms.toLong().coerceAtLeast(1L) else null
+            } else {
+                val rttMatch = Regex("rtt min/avg/max/mdev = [0-9.]+/([0-9.]+)/").find(output)
+                val ms = rttMatch?.groupValues?.getOrNull(1)?.toDoubleOrNull()
+                if (ms != null && ms > 0) ms.toLong().coerceAtLeast(1L) else null
+            }
+        } catch (_: Exception) {
+            null
+        }
+    }
+
+    private fun measureTcpPing(host: String, port: Int, timeoutMs: Int): Long? {
         val start = System.nanoTime()
-        return@withContext try {
+        return try {
             Socket().use { socket ->
                 socket.tcpNoDelay = true
-                socket.soTimeout = 1800
-                socket.connect(InetSocketAddress(host, port), 1800)
-                val latency = (System.nanoTime() - start) / 1_000_000
-                EndpointProbeResult(
-                    endpoint = endpoint,
-                    isReachable = true,
-                    latencyMs = latency.coerceAtLeast(1L),
-                    error = null
-                )
+                socket.soTimeout = timeoutMs
+                socket.connect(InetSocketAddress(host, port), timeoutMs)
+                val elapsed = (System.nanoTime() - start) / 1_000_000
+                if (elapsed > 0) elapsed else 1L
             }
-        } catch (e: Exception) {
-            // Test UDP reachability fallback
-            val udpPing = measureUdpReachability(host, port)
-            if (udpPing != null) {
-                EndpointProbeResult(
-                    endpoint = endpoint,
-                    isReachable = true,
-                    latencyMs = udpPing,
-                    error = null
-                )
-            } else {
-                EndpointProbeResult(
-                    endpoint = endpoint,
-                    isReachable = false,
-                    latencyMs = null,
-                    error = e.localizedMessage ?: "Timeout / Unreachable"
-                )
-            }
+        } catch (_: Exception) {
+            null
         }
     }
 
@@ -262,23 +312,6 @@ class PingTester(
         } catch (_: Exception) {
             // TCP 53 fallback
             tryRawTcpHandshake(dnsIp, 53, timeoutMs = 1000)
-        }
-    }
-
-    private fun measureUdpReachability(host: String, port: Int): Long? {
-        val start = System.nanoTime()
-        return try {
-            val pingPayload = ByteArray(16) { 0x00 }
-            DatagramSocket().use { socket ->
-                socket.soTimeout = 1000
-                val address = InetAddress.getByName(host)
-                val packet = DatagramPacket(pingPayload, pingPayload.size, address, port)
-                socket.send(packet)
-                val elapsed = (System.nanoTime() - start) / 1_000_000
-                if (elapsed > 0) elapsed else 1L
-            }
-        } catch (_: Exception) {
-            null
         }
     }
 

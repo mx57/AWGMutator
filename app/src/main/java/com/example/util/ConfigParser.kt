@@ -64,9 +64,16 @@ object ConfigParser {
                 when (currentSection) {
                     "interface" -> {
                         when (key) {
-                            "privatekey" -> privateKey = value
-                            "address" -> {
-                                address = if (!value.contains("/")) "$value/32" else value
+                            "privatekey", "private_key" -> privateKey = value
+                            "address", "addresses" -> {
+                                address = value.split(",")
+                                    .map { it.trim() }
+                                    .filter { it.isNotBlank() }
+                                    .map { addr ->
+                                        if (addr.contains("/")) addr
+                                        else if (addr.contains(":")) "$addr/128"
+                                        else "$addr/32"
+                                    }.joinToString(", ")
                             }
                             "dns" -> dns = value
                             "mtu" -> mtu = value.toIntOrNull() ?: 1280
@@ -86,16 +93,16 @@ object ConfigParser {
                             "i3" -> i3 = value
                             "i4" -> i4 = value
                             "sni" -> sni = value
-                            "reserved" -> reserved = value
+                            "reserved", "client_id", "clientid" -> reserved = value
                         }
                     }
                     "peer" -> {
                         when (key) {
-                            "publickey" -> peerPublicKey = value
-                            "presharedkey" -> presharedKey = value
-                            "allowedips" -> allowedIps = value
+                            "publickey", "public_key" -> peerPublicKey = value
+                            "presharedkey", "preshared_key" -> presharedKey = value
+                            "allowedips", "allowed_ips" -> allowedIps = value
                             "endpoint" -> endpoint = value
-                            "persistentkeepalive" -> persistentKeepalive = value.toIntOrNull() ?: 25
+                            "persistentkeepalive", "persistent_keepalive" -> persistentKeepalive = value.toIntOrNull() ?: 25
                         }
                     }
                 }
