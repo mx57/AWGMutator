@@ -76,33 +76,23 @@ data class AwgConfig(
             builder.appendLine("MTU = $mtu")
         }
 
-        // Only emit AmneziaWG parameters if they are actually used
-        val hasAwgParams = jc > 0 || s1 > 0 || s2 > 0 || s3 > 0 || s4 > 0 ||
-                (h1 != 0L && h1 != 1L) || (h2 != 0L && h2 != 2L) ||
-                (h3 != 0L && h3 != 3L) || (h4 != 0L && h4 != 4L)
-
-        if (hasAwgParams) {
-            if (s1 > 0) builder.appendLine("S1 = $s1")
-            if (s2 > 0) builder.appendLine("S2 = $s2")
-            if (s3 > 0) builder.appendLine("S3 = $s3")
-            if (s4 > 0) builder.appendLine("S4 = $s4")
-            if (jc > 0) builder.appendLine("Jc = $jc")
-            if (jmin > 0) builder.appendLine("Jmin = $jmin")
-            if (jmax > 0) builder.appendLine("Jmax = $jmax")
-            if (h1 > 0L) builder.appendLine("H1 = $h1")
-            if (h2 > 0L) builder.appendLine("H2 = $h2")
-            if (h3 > 0L) builder.appendLine("H3 = $h3")
-            if (h4 > 0L) builder.appendLine("H4 = $h4")
-            if (!i1.isNullOrBlank()) builder.appendLine("I1 = $i1")
-            if (!i2.isNullOrBlank()) builder.appendLine("I2 = $i2")
-            if (!i3.isNullOrBlank()) builder.appendLine("I3 = $i3")
-            if (!i4.isNullOrBlank()) builder.appendLine("I4 = $i4")
-            if (!sni.isNullOrBlank()) builder.appendLine("SNI = $sni")
-        }
-
-        if (!reserved.isNullOrBlank()) {
-            builder.appendLine("Reserved = $reserved")
-        }
+        if (jc > 0) builder.appendLine("Jc = $jc")
+        if (jmin > 0) builder.appendLine("Jmin = $jmin")
+        if (jmax > 0) builder.appendLine("Jmax = $jmax")
+        if (s1 > 0) builder.appendLine("S1 = $s1")
+        if (s2 > 0) builder.appendLine("S2 = $s2")
+        if (s3 > 0) builder.appendLine("S3 = $s3")
+        if (s4 > 0) builder.appendLine("S4 = $s4")
+        if (h1 != 0L) builder.appendLine("H1 = $h1")
+        if (h2 != 0L) builder.appendLine("H2 = $h2")
+        if (h3 != 0L) builder.appendLine("H3 = $h3")
+        if (h4 != 0L) builder.appendLine("H4 = $h4")
+        if (!i1.isNullOrBlank()) builder.appendLine("# I1 = $i1")
+        if (!i2.isNullOrBlank()) builder.appendLine("# I2 = $i2")
+        if (!i3.isNullOrBlank()) builder.appendLine("# I3 = $i3")
+        if (!i4.isNullOrBlank()) builder.appendLine("# I4 = $i4")
+        if (!sni.isNullOrBlank()) builder.appendLine("# SNI = $sni")
+        if (!reserved.isNullOrBlank()) builder.appendLine("# Reserved = $reserved")
 
         builder.appendLine()
         builder.appendLine("[Peer]")

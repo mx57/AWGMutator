@@ -6,9 +6,10 @@ import com.example.App
 import com.example.domain.model.AwgConfig
 import com.example.domain.model.VpnState
 import com.example.domain.model.VpnStatus
-import com.wireguard.android.backend.GoBackend
-import com.wireguard.android.backend.Tunnel
-import com.wireguard.config.Config
+import org.amnezia.awg.backend.GoBackend
+import org.amnezia.awg.backend.NoopTunnelActionHandler
+import org.amnezia.awg.backend.Tunnel
+import org.amnezia.awg.config.Config
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -44,10 +45,11 @@ class TunnelManager(private val context: Context) {
     private var statsJob: Job? = null
     private var watchdogJob: Job? = null
 
-    private val goBackend: GoBackend by lazy { GoBackend(context) }
+    private val goBackend: GoBackend by lazy { GoBackend(context, NoopTunnelActionHandler()) }
 
     private val wgTunnel = object : Tunnel {
         override fun getName(): String = "awg0"
+        override fun isIpv4ResolutionPreferred(): Boolean = true
         override fun onStateChange(newState: Tunnel.State) {
             log("WG_STATE", "Tunnel state changed to: $newState")
             val current = _status.value
@@ -61,11 +63,6 @@ class TunnelManager(private val context: Context) {
                 Tunnel.State.DOWN -> {
                     _status.value = current.copy(
                         state = VpnState.DISCONNECTED
-                    )
-                }
-                Tunnel.State.TOGGLE -> {
-                    _status.value = current.copy(
-                        state = VpnState.CONNECTING
                     )
                 }
             }
@@ -131,11 +128,11 @@ class TunnelManager(private val context: Context) {
 
         scope.launch {
             try {
-                val cleanConf = config.toCleanWgQuickString()
-                log("TUN_CONF", "Generated WireGuard Quick configuration:\n$cleanConf")
+                val confText = config.toConfString()
+                log("TUN_CONF", "Generated AmneziaWG configuration:\n$confText")
 
-                val stream = ByteArrayInputStream(cleanConf.toByteArray(Charsets.UTF_8))
-                val wgConfig = try {
+                val stream = ByteArrayInputStream(confText.toByteArray(Charsets.UTF_8))
+                val awgConfig = try {
                     Config.parse(stream)
                 } catch (pe: Exception) {
                     log("TUN_ERROR", "Configuration parse error: ${pe.message}")
@@ -143,8 +140,8 @@ class TunnelManager(private val context: Context) {
                     throw pe
                 }
 
-                log("TUN_LIFECYCLE", "Calling native WireGuard GoBackend setState(UP)...")
-                val resultingState = goBackend.setState(wgTunnel, Tunnel.State.UP, wgConfig)
+                log("TUN_LIFECYCLE", "Calling native AmneziaWG GoBackend setState(UP)...")
+                val resultingState = goBackend.setState(wgTunnel, Tunnel.State.UP, awgConfig)
                 log("TUN_LIFECYCLE", "GoBackend setState UP returned: $resultingState")
 
                 _status.value = VpnStatus(
