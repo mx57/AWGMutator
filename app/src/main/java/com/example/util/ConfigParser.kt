@@ -19,6 +19,13 @@ object ConfigParser {
         }
     }
 
+    private fun extractByteLengthFromHexPayload(v: String?): Int {
+        if (v.isNullOrBlank()) return 0
+        val clean = v.trim().removePrefix("<b ").removeSuffix(">").removePrefix("0x").trim()
+        val hexOnly = clean.takeWhile { it.isDigit() || it in 'a'..'f' || it in 'A'..'F' }
+        return hexOnly.length / 2
+    }
+
     /**
      * Parses raw text configuration into an [AwgConfig] domain model.
      */
@@ -103,8 +110,16 @@ object ConfigParser {
                             "h2" -> h2 = parseLongWithHex(value) ?: 0L
                             "h3" -> h3 = parseLongWithHex(value) ?: 0L
                             "h4" -> h4 = parseLongWithHex(value) ?: 0L
-                            "i1" -> i1 = value
-                            "i2" -> i2 = value
+                            "i1" -> {
+                                i1 = value
+                                val len = extractByteLengthFromHexPayload(value)
+                                if (len > 0 && s1 == 0) s1 = len.coerceIn(5, 1420)
+                            }
+                            "i2" -> {
+                                i2 = value
+                                val len = extractByteLengthFromHexPayload(value)
+                                if (len > 0 && s2 == 0) s2 = len.coerceIn(5, 1420)
+                            }
                             "i3" -> i3 = value
                             "i4" -> i4 = value
                             "sni" -> sni = value
@@ -121,6 +136,16 @@ object ConfigParser {
                         }
                     }
                 }
+            }
+
+            // Calculate S1/S2 junk sizes from I1/I2 payloads if S1/S2 were 0
+            if (s1 == 0 && !i1.isNullOrBlank()) {
+                val len = extractByteLengthFromHexPayload(i1)
+                if (len > 0) s1 = len.coerceIn(5, 1420)
+            }
+            if (s2 == 0 && !i2.isNullOrBlank()) {
+                val len = extractByteLengthFromHexPayload(i2)
+                if (len > 0) s2 = len.coerceIn(5, 1420)
             }
 
             // Enforce Jmin <= Jmax bounds for AmneziaWG
