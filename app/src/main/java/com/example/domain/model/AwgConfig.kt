@@ -103,7 +103,18 @@ data class AwgConfig(
         if (!presharedKey.isNullOrBlank()) {
             builder.appendLine("PresharedKey = $presharedKey")
         }
-        val cleanAllowed = if (allowedIps.isNotBlank()) allowedIps else "0.0.0.0/0, ::/0"
+        val hasIpv6InAddress = cleanAddr.contains(":")
+        val rawAllowed = if (allowedIps.isNotBlank()) allowedIps.trim() else "0.0.0.0/0, ::/0"
+        val cleanAllowed = if (!hasIpv6InAddress) {
+            // Prune IPv6 routes if interface has no IPv6 address to prevent kernel packet blackholing on Android 14+
+            rawAllowed.split(",")
+                .map { it.trim() }
+                .filter { it.isNotBlank() && !it.contains(":") }
+                .joinToString(", ")
+                .ifBlank { "0.0.0.0/0" }
+        } else {
+            rawAllowed
+        }
         builder.appendLine("AllowedIPs = $cleanAllowed")
         val cleanEndpoint = sanitizeEndpoint(endpoint, defaultPort = if (isWarp) 854 else 51820)
         builder.appendLine("Endpoint = $cleanEndpoint")
