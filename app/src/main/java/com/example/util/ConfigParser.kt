@@ -10,6 +10,15 @@ import java.util.UUID
  */
 object ConfigParser {
 
+    private fun parseLongWithHex(v: String): Long? {
+        val clean = v.trim()
+        return if (clean.startsWith("0x", ignoreCase = true)) {
+            clean.substring(2).toLongOrNull(16)
+        } else {
+            clean.toLongOrNull()
+        }
+    }
+
     /**
      * Parses raw text configuration into an [AwgConfig] domain model.
      */
@@ -47,19 +56,19 @@ object ConfigParser {
 
             val lines = rawContent.lines()
             for (rawLine in lines) {
-                val line = rawLine.trim()
-                if (line.startsWith("#") || line.isBlank()) continue
+                val cleanLine = rawLine.substringBefore('#').trim()
+                if (cleanLine.isBlank()) continue
 
-                if (line.startsWith("[") && line.endsWith("]")) {
-                    currentSection = line.substring(1, line.length - 1).trim().lowercase()
+                if (cleanLine.startsWith("[") && cleanLine.endsWith("]")) {
+                    currentSection = cleanLine.substring(1, cleanLine.length - 1).trim().lowercase()
                     continue
                 }
 
-                val equalsIdx = line.indexOf('=')
+                val equalsIdx = cleanLine.indexOf('=')
                 if (equalsIdx == -1) continue
 
-                val key = line.substring(0, equalsIdx).trim().lowercase()
-                val value = line.substring(equalsIdx + 1).trim()
+                val key = cleanLine.substring(0, equalsIdx).trim().lowercase()
+                val value = cleanLine.substring(equalsIdx + 1).trim()
 
                 when (currentSection) {
                     "interface" -> {
@@ -77,17 +86,17 @@ object ConfigParser {
                             }
                             "dns" -> dns = value
                             "mtu" -> mtu = value.toIntOrNull() ?: 1280
-                            "jc" -> jc = value.toIntOrNull() ?: 0
-                            "jmin" -> jmin = value.toIntOrNull() ?: 0
-                            "jmax" -> jmax = value.toIntOrNull() ?: 0
-                            "s1" -> s1 = value.toIntOrNull() ?: 0
-                            "s2" -> s2 = value.toIntOrNull() ?: 0
-                            "s3" -> s3 = value.toIntOrNull() ?: 0
-                            "s4" -> s4 = value.toIntOrNull() ?: 0
-                            "h1" -> h1 = value.toLongOrNull() ?: 0L
-                            "h2" -> h2 = value.toLongOrNull() ?: 0L
-                            "h3" -> h3 = value.toLongOrNull() ?: 0L
-                            "h4" -> h4 = value.toLongOrNull() ?: 0L
+                            "jc" -> jc = parseLongWithHex(value)?.toInt() ?: 0
+                            "jmin" -> jmin = parseLongWithHex(value)?.toInt() ?: 0
+                            "jmax" -> jmax = parseLongWithHex(value)?.toInt() ?: 0
+                            "s1" -> s1 = parseLongWithHex(value)?.toInt() ?: 0
+                            "s2" -> s2 = parseLongWithHex(value)?.toInt() ?: 0
+                            "s3" -> s3 = parseLongWithHex(value)?.toInt() ?: 0
+                            "s4" -> s4 = parseLongWithHex(value)?.toInt() ?: 0
+                            "h1" -> h1 = parseLongWithHex(value) ?: 0L
+                            "h2" -> h2 = parseLongWithHex(value) ?: 0L
+                            "h3" -> h3 = parseLongWithHex(value) ?: 0L
+                            "h4" -> h4 = parseLongWithHex(value) ?: 0L
                             "i1" -> i1 = value
                             "i2" -> i2 = value
                             "i3" -> i3 = value
@@ -105,6 +114,18 @@ object ConfigParser {
                             "persistentkeepalive", "persistent_keepalive" -> persistentKeepalive = value.toIntOrNull() ?: 25
                         }
                     }
+                }
+            }
+
+            // Enforce Jmin <= Jmax bounds for AmneziaWG
+            if (jc > 0) {
+                if (jmin == 0 && jmax == 0) {
+                    jmin = 40
+                    jmax = 70
+                } else if (jmin > jmax) {
+                    val tmp = jmin
+                    jmin = jmax
+                    jmax = tmp
                 }
             }
 
