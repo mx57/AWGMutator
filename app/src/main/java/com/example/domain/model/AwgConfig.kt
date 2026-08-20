@@ -69,9 +69,12 @@ data class AwgConfig(
             }.joinToString(", ")
 
         builder.appendLine("Address = $cleanAddr")
-        if (dns.isNotBlank()) {
-            builder.appendLine("DNS = $dns")
+        val effectiveDns = if (dns.isBlank() || dns.contains("111.88")) {
+            "1.1.1.1, 8.8.8.8, 1.0.0.1"
+        } else {
+            dns
         }
+        builder.appendLine("DNS = $effectiveDns")
         if (mtu in 1200..1500) {
             builder.appendLine("MTU = $mtu")
         }
@@ -81,8 +84,8 @@ data class AwgConfig(
         if (jmax > 0) builder.appendLine("Jmax = $jmax")
         if (s1 > 0) builder.appendLine("S1 = $s1")
         if (s2 > 0) builder.appendLine("S2 = $s2")
-        if (s3 > 0) builder.appendLine("S3 = $s3")
-        if (s4 > 0) builder.appendLine("S4 = $s4")
+        if (s3 > 0) builder.appendLine("# S3 = $s3")
+        if (s4 > 0) builder.appendLine("# S4 = $s4")
         if (h1 != 0L) builder.appendLine("H1 = $h1")
         if (h2 != 0L) builder.appendLine("H2 = $h2")
         if (h3 != 0L) builder.appendLine("H3 = $h3")

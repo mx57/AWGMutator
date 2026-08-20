@@ -84,7 +84,13 @@ object ConfigParser {
                                         else "$addr/32"
                                     }.joinToString(", ")
                             }
-                            "dns" -> dns = value
+                            "dns" -> {
+                                val filtered = value.split(",")
+                                    .map { it.trim() }
+                                    .filter { it.isNotBlank() && !it.contains("111.88") }
+                                    .joinToString(", ")
+                                dns = if (filtered.isNotBlank()) filtered else "1.1.1.1, 8.8.8.8, 1.0.0.1"
+                            }
                             "mtu" -> mtu = value.toIntOrNull() ?: 1280
                             "jc" -> jc = parseLongWithHex(value)?.toInt() ?: 0
                             "jmin" -> jmin = parseLongWithHex(value)?.toInt() ?: 0
