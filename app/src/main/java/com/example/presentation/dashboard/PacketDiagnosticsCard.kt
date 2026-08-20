@@ -22,13 +22,16 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.AltRoute
 import androidx.compose.material.icons.filled.CheckCircle
+import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.KeyboardArrowUp
 import androidx.compose.material.icons.filled.NetworkCheck
 import androidx.compose.material.icons.filled.Terminal
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.FilledTonalButton
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -40,16 +43,20 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.platform.LocalClipboardManager
 import androidx.compose.ui.platform.testTag
+import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.example.App
 import com.example.domain.model.VpnState
 import com.example.domain.model.VpnStatus
 import com.example.ui.theme.CyberCyan
@@ -57,6 +64,8 @@ import com.example.ui.theme.CyberPurple
 import com.example.ui.theme.DangerRed
 import com.example.ui.theme.NeonGreen
 import com.example.ui.theme.WarningAmber
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
  * Diagnostic Card verifying VPN Service Lifecycle, Routing Table Modifications,
@@ -71,6 +80,9 @@ fun PacketDiagnosticsCard(
 ) {
     var isExpanded by remember { mutableStateOf(false) }
     val listState = rememberLazyListState()
+    val clipboardManager = LocalClipboardManager.current
+    val scope = rememberCoroutineScope()
+    var isCopied by remember { mutableStateOf(false) }
 
     val isConnected = vpnStatus.state == VpnState.CONNECTED
     val isConnecting = vpnStatus.state == VpnState.CONNECTING
@@ -109,12 +121,12 @@ fun PacketDiagnosticsCard(
                     Spacer(modifier = Modifier.width(10.dp))
                     Column {
                         Text(
-                            text = "🛠️ Tunnel Routing & Packet Flow",
+                            text = "🛠️ Tunnel Routing & Diagnostic Logs",
                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                             color = MaterialTheme.colorScheme.onSurface
                         )
                         Text(
-                            text = if (isConnected) "Active Routing Table Modified • 0.0.0.0/0 -> TUN" else "TUN Interface Standby",
+                            text = if (isConnected) "Active Routing Modified • 0.0.0.0/0 -> TUN" else "TUN Interface Standby",
                             style = MaterialTheme.typography.bodySmall,
                             color = if (isConnected) NeonGreen else MaterialTheme.colorScheme.onSurfaceVariant
                         )
@@ -153,8 +165,8 @@ fun PacketDiagnosticsCard(
                     modifier = Modifier.weight(1f)
                 )
                 RoutingStatusBadge(
-                    title = "DNS Intercept",
-                    value = if (isConnected) "1.1.1.1 (Encrypted)" else "ISP DNS",
+                    title = "DNS Server",
+                    value = if (isConnected) "1.1.1.1 (Secure)" else "ISP DNS",
                     isSuccess = isConnected,
                     modifier = Modifier.weight(1f)
                 )
@@ -171,17 +183,53 @@ fun PacketDiagnosticsCard(
                             Icon(Icons.Default.Terminal, contentDescription = null, tint = CyberCyan, modifier = Modifier.size(16.dp))
                             Spacer(modifier = Modifier.width(6.dp))
                             Text(
-                                text = "Live Packet Router Logs (${tunnelLogs.size})",
+                                text = "Live Engine Logs (${tunnelLogs.size})",
                                 style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
                                 color = MaterialTheme.colorScheme.onSurface
                             )
                         }
 
-                        IconButton(
-                            onClick = onClearLogs,
-                            modifier = Modifier.size(24.dp).testTag("clear_tunnel_logs_btn")
+                        Row(
+                            verticalAlignment = Alignment.CenterVertically,
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
-                            Icon(Icons.Default.Delete, contentDescription = "Clear Logs", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
+                            FilledTonalButton(
+                                onClick = {
+                                    val fullLog = App.instance.tunnelManager.getFormattedFullLogText()
+                                    clipboardManager.setText(AnnotatedString(fullLog))
+                                    isCopied = true
+                                    scope.launch {
+                                        delay(2500)
+                                        isCopied = false
+                                    }
+                                },
+                                colors = ButtonDefaults.filledTonalButtonColors(
+                                    containerColor = if (isCopied) NeonGreen.copy(alpha = 0.2f) else CyberCyan.copy(alpha = 0.15f),
+                                    contentColor = if (isCopied) NeonGreen else CyberCyan
+                                ),
+                                shape = RoundedCornerShape(8.dp),
+                                modifier = Modifier
+                                    .height(30.dp)
+                                    .testTag("copy_tunnel_logs_btn")
+                            ) {
+                                Icon(
+                                    imageVector = if (isCopied) Icons.Default.CheckCircle else Icons.Default.ContentCopy,
+                                    contentDescription = "Копировать",
+                                    modifier = Modifier.size(14.dp)
+                                )
+                                Spacer(modifier = Modifier.width(4.dp))
+                                Text(
+                                    text = if (isCopied) "Скопировано!" else "Копировать",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 11.sp)
+                                )
+                            }
+
+                            IconButton(
+                                onClick = onClearLogs,
+                                modifier = Modifier.size(30.dp).testTag("clear_tunnel_logs_btn")
+                            ) {
+                                Icon(Icons.Default.Delete, contentDescription = "Clear Logs", tint = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.size(16.dp))
+                            }
                         }
                     }
 
@@ -193,7 +241,7 @@ fun PacketDiagnosticsCard(
                         border = BorderStroke(1.dp, Color(0xFF232D3F)),
                         modifier = Modifier
                             .fillMaxWidth()
-                            .heightIn(max = 220.dp)
+                            .heightIn(min = 120.dp, max = 280.dp)
                     ) {
                         if (tunnelLogs.isEmpty()) {
                             Box(
@@ -203,7 +251,7 @@ fun PacketDiagnosticsCard(
                                 contentAlignment = Alignment.Center
                             ) {
                                 Text(
-                                    text = "No packet routing events logged yet. Connect tunnel to view live packet dispatching.",
+                                    text = "No events logged yet. Connect tunnel to view detailed system logs and handshake progress.",
                                     style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace, fontSize = 11.sp),
                                     color = Color.Gray
                                 )
@@ -217,12 +265,11 @@ fun PacketDiagnosticsCard(
                             ) {
                                 items(tunnelLogs) { logLine ->
                                     val logColor = when {
-                                        logLine.contains("[VPN_ERROR]") || logLine.contains("[PACKET_TCP_ERR]") || logLine.contains("[PACKET_DNS_ERR]") -> DangerRed
-                                        logLine.contains("[VPN_ROUTING]") || logLine.contains("[VPN_LIFECYCLE]") -> CyberPurple
-                                        logLine.contains("[PACKET_TCP]") -> CyberCyan
-                                        logLine.contains("[PACKET_UDP]") -> NeonGreen
-                                        logLine.contains("[PACKET_DNS]") -> WarningAmber
-                                        logLine.contains("[VPN_VERIFY]") -> NeonGreen
+                                        logLine.contains("[TUN_ERROR]") || logLine.contains("[VPN_ERROR]") || logLine.contains("[PACKET_TCP_ERR]") -> DangerRed
+                                        logLine.contains("[TUN_WARN]") || logLine.contains("[PACKET_DNS]") -> WarningAmber
+                                        logLine.contains("[TUN_LIFECYCLE]") || logLine.contains("[WG_STATE]") || logLine.contains("[DEVICE_INFO]") -> CyberPurple
+                                        logLine.contains("[TUN_CONF]") -> CyberCyan
+                                        logLine.contains("[TUN_TRAFFIC]") || logLine.contains("[VPN_VERIFY]") -> NeonGreen
                                         else -> Color(0xFFD1D5DB)
                                     }
 
