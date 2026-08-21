@@ -63,19 +63,27 @@ object ConfigParser {
 
             val lines = rawContent.lines()
             for (rawLine in lines) {
-                val cleanLine = rawLine.substringBefore('#').trim()
-                if (cleanLine.isBlank()) continue
+                var line = rawLine.trim()
+                if (line.isBlank()) continue
 
-                if (cleanLine.startsWith("[") && cleanLine.endsWith("]")) {
-                    currentSection = cleanLine.substring(1, cleanLine.length - 1).trim().lowercase()
+                if (line.startsWith("#") || line.startsWith("//")) {
+                    line = line.removePrefix("#").removePrefix("//").trim()
+                } else if (line.contains("#")) {
+                    line = line.substringBefore("#").trim()
+                }
+
+                if (line.isBlank()) continue
+
+                if (line.startsWith("[") && line.endsWith("]")) {
+                    currentSection = line.substring(1, line.length - 1).trim().lowercase()
                     continue
                 }
 
-                val equalsIdx = cleanLine.indexOf('=')
+                val equalsIdx = line.indexOf('=')
                 if (equalsIdx == -1) continue
 
-                val key = cleanLine.substring(0, equalsIdx).trim().lowercase()
-                val value = cleanLine.substring(equalsIdx + 1).trim()
+                val key = line.substring(0, equalsIdx).trim().lowercase()
+                val value = line.substring(equalsIdx + 1).trim()
 
                 when (currentSection) {
                     "interface" -> {
