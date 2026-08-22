@@ -69,12 +69,9 @@ data class AwgConfig(
             }.joinToString(", ")
 
         builder.appendLine("Address = $cleanAddr")
-        val effectiveDns = if (dns.isBlank() || dns.contains("111.88")) {
-            "1.1.1.1, 8.8.8.8, 1.0.0.1"
-        } else {
-            dns
+        if (dns.isNotBlank()) {
+            builder.appendLine("DNS = $dns")
         }
-        builder.appendLine("DNS = $effectiveDns")
         if (mtu in 1200..1500) {
             builder.appendLine("MTU = $mtu")
         }

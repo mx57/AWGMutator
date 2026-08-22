@@ -167,15 +167,15 @@ class PingTester(
             )
         }
 
-        // 4. UDP WireGuard / AmneziaWG endpoint fallback:
-        // Native AWG / WireGuard endpoints operate exclusively over UDP and remain completely silent
-        // to unauthenticated TCP/ICMP probes. If the IP/host is resolvable, treat as active endpoint.
-        val isResolvable = runCatching { InetAddress.getByName(host) }.isSuccess
-        if (isResolvable) {
+        // 4. UDP WireGuard / AmneziaWG endpoint probing:
+        // Native AWG / WireGuard endpoints operate exclusively over UDP and remain silent to ICMP/TCP probes.
+        // Measure real UDP DNS latency or resolution time for the host.
+        val dnsPing = measureDnsLatency(host)
+        if (dnsPing != null && dnsPing > 0) {
             return@withContext EndpointProbeResult(
                 endpoint = endpoint,
                 isReachable = true,
-                latencyMs = 35L,
+                latencyMs = dnsPing,
                 error = null
             )
         }
