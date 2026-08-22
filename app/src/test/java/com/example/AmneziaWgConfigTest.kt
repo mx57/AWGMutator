@@ -112,6 +112,41 @@ class AmneziaWgConfigTest {
     }
 
     @Test
+    fun testExtractS1FromI1HexPayload() {
+        val keyPair1 = WireGuardKeyGen.generateKeyPair()
+        val keyPair2 = WireGuardKeyGen.generateKeyPair()
+
+        val sampleAwg3Conf = """
+            [Interface]
+            PrivateKey = ${keyPair1.privateKey}
+            Address = 172.16.0.2/32
+            DNS = 1.1.1.1, 8.8.8.8
+            S1 = 0
+            S2 = 0
+            # I1 = <b 0xce000000010897a297ecc34cd6dd0000>
+
+            [Peer]
+            PublicKey = ${keyPair2.publicKey}
+            AllowedIPs = 0.0.0.0/0
+            Endpoint = 194.87.12.34:51820
+        """.trimIndent()
+
+        val parseResult = ConfigParser.parse(sampleAwg3Conf, "AWG 3.0 Test")
+        assertTrue(parseResult.isSuccess)
+
+        val config = parseResult.getOrThrow()
+        assertEquals(16, config.s1)
+
+        val exportedConf = config.toConfString()
+        assertTrue(exportedConf.contains("S1 = 16"))
+
+        val inputStream = ByteArrayInputStream(exportedConf.toByteArray(Charsets.UTF_8))
+        val awgNativeConfig = Config.parse(inputStream)
+        assertNotNull(awgNativeConfig)
+        assertEquals(16, awgNativeConfig.`interface`.initPacketJunkSize.orElse(0))
+    }
+
+    @Test
     fun testJminJmaxBoundEnforcement() {
         val keyPair1 = WireGuardKeyGen.generateKeyPair()
         val keyPair2 = WireGuardKeyGen.generateKeyPair()

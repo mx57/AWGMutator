@@ -140,6 +140,17 @@ class TunnelManager(private val context: Context) {
                     throw pe
                 }
 
+                val iface = awgConfig.`interface`
+                val peer = awgConfig.peers.firstOrNull()
+                log("TUN_PARSED_DIAG", "Parsed AWG Interface: Addresses=${iface.addresses}, DNS=${iface.dnsServers}, MTU=${iface.mtu.orElse(0)}")
+                log(
+                    "TUN_PARSED_DIAG",
+                    "AWG Parameters: Jc=${iface.junkPacketCount.orElse(0)}, Jmin=${iface.junkPacketMinSize.orElse(0)}, Jmax=${iface.junkPacketMaxSize.orElse(0)}, S1=${iface.initPacketJunkSize.orElse(0)}, S2=${iface.responsePacketJunkSize.orElse(0)}, H1=${iface.initPacketMagicHeader.orElse(0L)}, H2=${iface.responsePacketMagicHeader.orElse(0L)}, H3=${iface.underloadPacketMagicHeader.orElse(0L)}, H4=${iface.transportPacketMagicHeader.orElse(0L)}"
+                )
+                if (peer != null) {
+                    log("TUN_PARSED_DIAG", "Parsed Peer: Endpoint=${peer.endpoint.orElse(null)}, AllowedIPs=${peer.allowedIps}")
+                }
+
                 log("TUN_LIFECYCLE", "Calling native AmneziaWG GoBackend setState(UP)...")
                 val resultingState = goBackend.setState(wgTunnel, Tunnel.State.UP, awgConfig)
                 log("TUN_LIFECYCLE", "GoBackend setState UP returned: $resultingState")
@@ -218,13 +229,15 @@ class TunnelManager(private val context: Context) {
                     if (current.state == VpnState.CONNECTED) {
                         _status.value = current.copy(rxBytes = rx, txBytes = tx)
 
+                        log("TUN_STATS_POLL", "Periodic Traffic Poll: Tx=$tx B, Rx=$rx B (ZeroRxCycles=$zeroRxCycles)")
+
                         if (tx > 0 && rx > 0 && !handshakeReported) {
                             handshakeReported = true
                             log("TUN_TRAFFIC", "Handshake established! Active traffic flow: Tx=$tx B, Rx=$rx B")
-                        } else if (tx > 0 && rx == 0L) {
+                        } else if (tx > 0 && rx < 100L) {
                             zeroRxCycles++
-                            if (zeroRxCycles == 3 || zeroRxCycles == 7) {
-                                log("TUN_WARN", "Tx=$tx B sent, but Rx=0 B received. Server did not complete WireGuard handshake yet. Target: ${config.endpoint}")
+                            if (zeroRxCycles % 3 == 0) {
+                                log("TUN_WARN", "Tx=$tx B sent, but low Rx=$rx B received. Server may be dropping data or handshake unacknowledged. Target: ${config.endpoint}")
                             }
                         }
                     }
