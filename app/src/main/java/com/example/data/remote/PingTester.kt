@@ -153,29 +153,15 @@ class PingTester(
             )
         }
 
-        // 3. If target port is UDP-only (e.g. 854/1074/2408/51820), probe host edge availability via HTTPS (port 443) or DNS (port 53)
+        // 3. If target port is UDP-only (e.g. 854/1074/2408/51820), probe host edge availability via HTTPS (port 443) or HTTP (port 80)
         val edgePing = measureTcpPing(host, 443, timeoutMs = 1500)
             ?: measureTcpPing(host, 80, timeoutMs = 1500)
-            ?: measureDnsLatency(host)
 
         if (edgePing != null && edgePing > 0) {
             return@withContext EndpointProbeResult(
                 endpoint = endpoint,
                 isReachable = true,
                 latencyMs = edgePing,
-                error = null
-            )
-        }
-
-        // 4. UDP WireGuard / AmneziaWG endpoint probing:
-        // Native AWG / WireGuard endpoints operate exclusively over UDP and remain silent to ICMP/TCP probes.
-        // Measure real UDP DNS latency or resolution time for the host.
-        val dnsPing = measureDnsLatency(host)
-        if (dnsPing != null && dnsPing > 0) {
-            return@withContext EndpointProbeResult(
-                endpoint = endpoint,
-                isReachable = true,
-                latencyMs = dnsPing,
                 error = null
             )
         }
