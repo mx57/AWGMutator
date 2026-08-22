@@ -128,15 +128,7 @@ class TunnelManager(private val context: Context) {
 
         scope.launch {
             try {
-                val effectiveDns = if (config.dns.isBlank()) {
-                    "1.1.1.1, 8.8.8.8, 1.0.0.1"
-                } else {
-                    config.dns
-                }
-
-                val effectiveConfig = config.copy(dns = effectiveDns)
-
-                val confText = effectiveConfig.toConfString()
+                val confText = config.toConfString()
                 log("TUN_CONF", "Generated AmneziaWG configuration:\n$confText")
 
                 // Strip extended attributes (I1-I4, SNI, S3, S4, Reserved) not supported by native Config.parse
