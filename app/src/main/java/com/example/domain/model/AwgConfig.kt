@@ -79,8 +79,11 @@ data class AwgConfig(
         if (jc > 0) builder.appendLine("Jc = $jc")
         if (jmin > 0) builder.appendLine("Jmin = $jmin")
         if (jmax > 0) builder.appendLine("Jmax = $jmax")
-        if (s1 > 0) builder.appendLine("S1 = $s1")
-        if (s2 > 0) builder.appendLine("S2 = $s2")
+        val effectiveS1 = if (s1 > 0) s1 else extractByteLengthFromHexPayload(i1)
+        val effectiveS2 = if (s2 > 0) s2 else extractByteLengthFromHexPayload(i2)
+
+        if (effectiveS1 > 0) builder.appendLine("S1 = $effectiveS1")
+        if (effectiveS2 > 0) builder.appendLine("S2 = $effectiveS2")
         if (s3 > 0) builder.appendLine("# S3 = $s3")
         if (s4 > 0) builder.appendLine("# S4 = $s4")
         if (h1 != 0L) builder.appendLine("H1 = $h1")
@@ -187,6 +190,13 @@ data class AwgConfig(
     }
 
     companion object {
+        fun extractByteLengthFromHexPayload(v: String?): Int {
+            if (v.isNullOrBlank()) return 0
+            val clean = v.trim().removePrefix("<b ").removeSuffix(">").removePrefix("0x").trim()
+            val hexOnly = clean.takeWhile { it.isDigit() || it in 'a'..'f' || it in 'A'..'F' }
+            return (hexOnly.length / 2).coerceIn(0, 1420)
+        }
+
         fun sanitizeEndpoint(raw: String?, defaultPort: Int = 51820): String {
             val trimmed = raw?.trim().orEmpty()
             if (trimmed.isBlank()) return "188.114.97.1:$defaultPort"
