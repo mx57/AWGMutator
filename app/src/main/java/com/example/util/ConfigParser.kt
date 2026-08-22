@@ -10,6 +10,22 @@ import java.util.UUID
  */
 object ConfigParser {
 
+    private fun parseLongWithHex(v: String): Long? {
+        val clean = v.trim()
+        return if (clean.startsWith("0x", ignoreCase = true)) {
+            clean.substring(2).toLongOrNull(16)
+        } else {
+            clean.toLongOrNull()
+        }
+    }
+
+    private fun extractByteLengthFromHexPayload(v: String?): Int {
+        if (v.isNullOrBlank()) return 0
+        val clean = v.trim().removePrefix("<b ").removeSuffix(">").removePrefix("0x").trim()
+        val hexOnly = clean.takeWhile { it.isDigit() || it in 'a'..'f' || it in 'A'..'F' }
+        return hexOnly.length / 2
+    }
+
     /**
      * Parses raw text configuration into an [AwgConfig] domain model.
      */
@@ -47,8 +63,13 @@ object ConfigParser {
 
             val lines = rawContent.lines()
             for (rawLine in lines) {
-                val line = rawLine.trim()
-                if (line.startsWith("#") || line.isBlank()) continue
+                var line = rawLine.trim()
+                if (line.isBlank() || line.startsWith("#")) continue
+                if (line.contains("#")) {
+                    line = line.substringBefore("#").trim()
+                }
+
+                if (line.isBlank()) continue
 
                 if (line.startsWith("[") && line.endsWith("]")) {
                     currentSection = line.substring(1, line.length - 1).trim().lowercase()
@@ -77,19 +98,27 @@ object ConfigParser {
                             }
                             "dns" -> dns = value
                             "mtu" -> mtu = value.toIntOrNull() ?: 1280
-                            "jc" -> jc = value.toIntOrNull() ?: 0
-                            "jmin" -> jmin = value.toIntOrNull() ?: 0
-                            "jmax" -> jmax = value.toIntOrNull() ?: 0
-                            "s1" -> s1 = value.toIntOrNull() ?: 0
-                            "s2" -> s2 = value.toIntOrNull() ?: 0
-                            "s3" -> s3 = value.toIntOrNull() ?: 0
-                            "s4" -> s4 = value.toIntOrNull() ?: 0
-                            "h1" -> h1 = value.toLongOrNull() ?: 0L
-                            "h2" -> h2 = value.toLongOrNull() ?: 0L
-                            "h3" -> h3 = value.toLongOrNull() ?: 0L
-                            "h4" -> h4 = value.toLongOrNull() ?: 0L
-                            "i1" -> i1 = value
-                            "i2" -> i2 = value
+                            "jc" -> jc = parseLongWithHex(value)?.toInt() ?: 0
+                            "jmin" -> jmin = parseLongWithHex(value)?.toInt() ?: 0
+                            "jmax" -> jmax = parseLongWithHex(value)?.toInt() ?: 0
+                            "s1" -> s1 = parseLongWithHex(value)?.toInt() ?: 0
+                            "s2" -> s2 = parseLongWithHex(value)?.toInt() ?: 0
+                            "s3" -> s3 = parseLongWithHex(value)?.toInt() ?: 0
+                            "s4" -> s4 = parseLongWithHex(value)?.toInt() ?: 0
+                            "h1" -> h1 = parseLongWithHex(value) ?: 0L
+                            "h2" -> h2 = parseLongWithHex(value) ?: 0L
+                            "h3" -> h3 = parseLongWithHex(value) ?: 0L
+                            "h4" -> h4 = parseLongWithHex(value) ?: 0L
+                            "i1" -> {
+                                i1 = value
+                                val len = extractByteLengthFromHexPayload(value)
+                                if (len > 0 && s1 == 0) s1 = len.coerceIn(5, 1420)
+                            }
+                            "i2" -> {
+                                i2 = value
+                                val len = extractByteLengthFromHexPayload(value)
+                                if (len > 0 && s2 == 0) s2 = len.coerceIn(5, 1420)
+                            }
                             "i3" -> i3 = value
                             "i4" -> i4 = value
                             "sni" -> sni = value
@@ -105,6 +134,28 @@ object ConfigParser {
                             "persistentkeepalive", "persistent_keepalive" -> persistentKeepalive = value.toIntOrNull() ?: 25
                         }
                     }
+                }
+            }
+
+            // Calculate S1/S2 junk sizes from I1/I2 payloads if S1/S2 were 0
+            if (s1 == 0 && !i1.isNullOrBlank()) {
+                val len = extractByteLengthFromHexPayload(i1)
+                if (len > 0) s1 = len.coerceIn(5, 1420)
+            }
+            if (s2 == 0 && !i2.isNullOrBlank()) {
+                val len = extractByteLengthFromHexPayload(i2)
+                if (len > 0) s2 = len.coerceIn(5, 1420)
+            }
+
+            // Enforce Jmin <= Jmax bounds for AmneziaWG
+            if (jc > 0) {
+                if (jmin == 0 && jmax == 0) {
+                    jmin = 40
+                    jmax = 70
+                } else if (jmin > jmax) {
+                    val tmp = jmin
+                    jmin = jmax
+                    jmax = tmp
                 }
             }
 

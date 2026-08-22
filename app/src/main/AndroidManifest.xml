@@ -52,7 +52,7 @@
         </service>
 
         <service
-            android:name="com.wireguard.android.backend.GoBackend$VpnService"
+            android:name="org.amnezia.awg.backend.GoBackend$VpnService"
             android:permission="android.permission.BIND_VPN_SERVICE"
             android:foregroundServiceType="specialUse"
             android:exported="false">
@@ -61,7 +61,7 @@
             </intent-filter>
             <property
                 android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="WireGuard VPN tunnel engine for encrypted packet routing" />
+                android:value="AmneziaWG VPN tunnel engine for obfuscated packet routing" />
         </service>
 
         <provider
