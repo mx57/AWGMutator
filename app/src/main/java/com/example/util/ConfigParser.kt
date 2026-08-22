@@ -64,8 +64,11 @@ object ConfigParser {
             val lines = rawContent.lines()
             for (rawLine in lines) {
                 var line = rawLine.trim()
-                if (line.isBlank() || line.startsWith("#")) continue
-                if (line.contains("#")) {
+                if (line.isBlank()) continue
+
+                if (line.startsWith("#") || line.startsWith("//")) {
+                    line = line.removePrefix("#").removePrefix("//").trim()
+                } else if (line.contains("#")) {
                     line = line.substringBefore("#").trim()
                 }
 
