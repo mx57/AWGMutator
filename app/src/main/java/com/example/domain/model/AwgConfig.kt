@@ -84,18 +84,18 @@ data class AwgConfig(
 
         if (effectiveS1 > 0) builder.appendLine("S1 = $effectiveS1")
         if (effectiveS2 > 0) builder.appendLine("S2 = $effectiveS2")
-        if (s3 > 0) builder.appendLine("# S3 = $s3")
-        if (s4 > 0) builder.appendLine("# S4 = $s4")
+        if (s3 > 0) builder.appendLine("S3 = $s3")
+        if (s4 > 0) builder.appendLine("S4 = $s4")
         if (h1 != 0L) builder.appendLine("H1 = $h1")
         if (h2 != 0L) builder.appendLine("H2 = $h2")
         if (h3 != 0L) builder.appendLine("H3 = $h3")
         if (h4 != 0L) builder.appendLine("H4 = $h4")
-        if (!i1.isNullOrBlank()) builder.appendLine("# I1 = $i1")
-        if (!i2.isNullOrBlank()) builder.appendLine("# I2 = $i2")
-        if (!i3.isNullOrBlank()) builder.appendLine("# I3 = $i3")
-        if (!i4.isNullOrBlank()) builder.appendLine("# I4 = $i4")
-        if (!sni.isNullOrBlank()) builder.appendLine("# SNI = $sni")
-        if (!reserved.isNullOrBlank()) builder.appendLine("# Reserved = $reserved")
+        if (!i1.isNullOrBlank()) builder.appendLine("I1 = $i1")
+        if (!i2.isNullOrBlank()) builder.appendLine("I2 = $i2")
+        if (!i3.isNullOrBlank()) builder.appendLine("I3 = $i3")
+        if (!i4.isNullOrBlank()) builder.appendLine("I4 = $i4")
+        if (!sni.isNullOrBlank()) builder.appendLine("SNI = $sni")
+        if (!reserved.isNullOrBlank()) builder.appendLine("Reserved = $reserved")
 
         builder.appendLine()
         builder.appendLine("[Peer]")
@@ -103,18 +103,7 @@ data class AwgConfig(
         if (!presharedKey.isNullOrBlank()) {
             builder.appendLine("PresharedKey = $presharedKey")
         }
-        val hasIpv6InAddress = cleanAddr.contains(":")
-        val rawAllowed = if (allowedIps.isNotBlank()) allowedIps.trim() else "0.0.0.0/0, ::/0"
-        val cleanAllowed = if (!hasIpv6InAddress) {
-            // Prune IPv6 routes if interface has no IPv6 address to prevent kernel packet blackholing on Android 14+
-            rawAllowed.split(",")
-                .map { it.trim() }
-                .filter { it.isNotBlank() && !it.contains(":") }
-                .joinToString(", ")
-                .ifBlank { "0.0.0.0/0" }
-        } else {
-            rawAllowed
-        }
+        val cleanAllowed = if (allowedIps.isNotBlank()) allowedIps.trim() else "0.0.0.0/0, ::/0"
         builder.appendLine("AllowedIPs = $cleanAllowed")
         val cleanEndpoint = sanitizeEndpoint(endpoint, defaultPort = if (isWarp) 854 else 51820)
         builder.appendLine("Endpoint = $cleanEndpoint")

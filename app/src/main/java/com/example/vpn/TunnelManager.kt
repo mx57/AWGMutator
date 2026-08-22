@@ -131,7 +131,14 @@ class TunnelManager(private val context: Context) {
                 val confText = config.toConfString()
                 log("TUN_CONF", "Generated AmneziaWG configuration:\n$confText")
 
-                val stream = ByteArrayInputStream(confText.toByteArray(Charsets.UTF_8))
+                // Strip extended attributes (I1-I4, SNI, S3, S4, Reserved) not supported by native Config.parse
+                val extendedKeys = setOf("reserved", "sni", "i1", "i2", "i3", "i4", "s3", "s4")
+                val nativeConf = confText.lines().filterNot { line ->
+                    val key = line.substringBefore("=").trim().lowercase()
+                    key in extendedKeys
+                }.joinToString("\n")
+
+                val stream = ByteArrayInputStream(nativeConf.toByteArray(Charsets.UTF_8))
                 val awgConfig = try {
                     Config.parse(stream)
                 } catch (pe: Exception) {

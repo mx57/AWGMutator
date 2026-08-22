@@ -255,7 +255,7 @@ class DashboardViewModel(
         val currentConfig = _uiState.value.selectedConfig ?: configs.value.firstOrNull() ?: return
         viewModelScope.launch {
             val cleanEndpoint = "188.114.97.1:854"
-            val cleanDns = if (currentConfig.dns.isBlank() || currentConfig.dns.contains("111.88")) "1.1.1.1, 1.0.0.1" else currentConfig.dns
+            val cleanDns = if (currentConfig.dns.isBlank()) "1.1.1.1, 1.0.0.1" else currentConfig.dns
             val updatedConfig = currentConfig.copy(
                 endpoint = cleanEndpoint,
                 dns = cleanDns

@@ -69,10 +69,21 @@ class AmneziaWgConfigTest {
         assertTrue(exportedConf.contains("S1 = 15"))
         assertTrue(exportedConf.contains("S2 = 25"))
         assertTrue(exportedConf.contains("H1 = 305419896"))
-        assertTrue(exportedConf.contains("# I1 = custom_init_junk"))
+        assertTrue(exportedConf.contains("I1 = custom_init_junk"))
+        assertTrue(exportedConf.contains("Reserved = 1,2,3"))
+
+        val nativeConf = exportedConf.lines().filterNot { line ->
+            val trimmed = line.trim().lowercase()
+            trimmed.startsWith("reserved =") ||
+            trimmed.startsWith("sni =") ||
+            trimmed.startsWith("i1 =") ||
+            trimmed.startsWith("i2 =") ||
+            trimmed.startsWith("i3 =") ||
+            trimmed.startsWith("i4 =")
+        }.joinToString("\n")
 
         // Verify native AmneziaWG Config parser accepts this configuration!
-        val inputStream = ByteArrayInputStream(exportedConf.toByteArray(Charsets.UTF_8))
+        val inputStream = ByteArrayInputStream(nativeConf.toByteArray(Charsets.UTF_8))
         val awgNativeConfig = Config.parse(inputStream)
         assertNotNull(awgNativeConfig)
         assertEquals(4, awgNativeConfig.`interface`.junkPacketCount.orElse(0))
@@ -106,7 +117,17 @@ class AmneziaWgConfigTest {
         assertEquals(0, config.jc)
 
         val exportedConf = config.toConfString()
-        val inputStream = ByteArrayInputStream(exportedConf.toByteArray(Charsets.UTF_8))
+        val nativeConf = exportedConf.lines().filterNot { line ->
+            val trimmed = line.trim().lowercase()
+            trimmed.startsWith("reserved =") ||
+            trimmed.startsWith("sni =") ||
+            trimmed.startsWith("i1 =") ||
+            trimmed.startsWith("i2 =") ||
+            trimmed.startsWith("i3 =") ||
+            trimmed.startsWith("i4 =")
+        }.joinToString("\n")
+
+        val inputStream = ByteArrayInputStream(nativeConf.toByteArray(Charsets.UTF_8))
         val awgNativeConfig = Config.parse(inputStream)
         assertNotNull(awgNativeConfig)
     }
@@ -123,7 +144,7 @@ class AmneziaWgConfigTest {
             DNS = 1.1.1.1, 8.8.8.8
             S1 = 0
             S2 = 0
-            # I1 = <b 0xce000000010897a297ecc34cd6dd0000>
+            I1 = <b 0xce000000010897a297ecc34cd6dd0000>
 
             [Peer]
             PublicKey = ${keyPair2.publicKey}
@@ -140,7 +161,17 @@ class AmneziaWgConfigTest {
         val exportedConf = config.toConfString()
         assertTrue(exportedConf.contains("S1 = 16"))
 
-        val inputStream = ByteArrayInputStream(exportedConf.toByteArray(Charsets.UTF_8))
+        val nativeConf = exportedConf.lines().filterNot { line ->
+            val trimmed = line.trim().lowercase()
+            trimmed.startsWith("reserved =") ||
+            trimmed.startsWith("sni =") ||
+            trimmed.startsWith("i1 =") ||
+            trimmed.startsWith("i2 =") ||
+            trimmed.startsWith("i3 =") ||
+            trimmed.startsWith("i4 =")
+        }.joinToString("\n")
+
+        val inputStream = ByteArrayInputStream(nativeConf.toByteArray(Charsets.UTF_8))
         val awgNativeConfig = Config.parse(inputStream)
         assertNotNull(awgNativeConfig)
         assertEquals(16, awgNativeConfig.`interface`.initPacketJunkSize.orElse(0))
