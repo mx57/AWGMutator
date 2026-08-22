@@ -76,33 +76,36 @@ data class AwgConfig(
             builder.appendLine("MTU = $mtu")
         }
 
-        // Only emit AmneziaWG parameters if they are actually used
-        val hasAwgParams = jc > 0 || s1 > 0 || s2 > 0 || s3 > 0 || s4 > 0 ||
-                (h1 != 0L && h1 != 1L) || (h2 != 0L && h2 != 2L) ||
-                (h3 != 0L && h3 != 3L) || (h4 != 0L && h4 != 4L)
+        val isCloudflareWarpEndpoint = (isWarp || peerPublicKey == "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=") &&
+                (h1 == 0L || h1 == 1L) && jc == 0 && s1 == 0
 
-        if (hasAwgParams) {
-            if (s1 > 0) builder.appendLine("S1 = $s1")
-            if (s2 > 0) builder.appendLine("S2 = $s2")
-            if (s3 > 0) builder.appendLine("S3 = $s3")
-            if (s4 > 0) builder.appendLine("S4 = $s4")
+        if (!isCloudflareWarpEndpoint) {
             if (jc > 0) builder.appendLine("Jc = $jc")
             if (jmin > 0) builder.appendLine("Jmin = $jmin")
             if (jmax > 0) builder.appendLine("Jmax = $jmax")
-            if (h1 > 0L) builder.appendLine("H1 = $h1")
-            if (h2 > 0L) builder.appendLine("H2 = $h2")
-            if (h3 > 0L) builder.appendLine("H3 = $h3")
-            if (h4 > 0L) builder.appendLine("H4 = $h4")
-            if (!i1.isNullOrBlank()) builder.appendLine("I1 = $i1")
-            if (!i2.isNullOrBlank()) builder.appendLine("I2 = $i2")
-            if (!i3.isNullOrBlank()) builder.appendLine("I3 = $i3")
-            if (!i4.isNullOrBlank()) builder.appendLine("I4 = $i4")
-            if (!sni.isNullOrBlank()) builder.appendLine("SNI = $sni")
-        }
+            val effectiveS1 = if (s1 > 0) s1 else extractByteLengthFromHexPayload(i1)
+            val effectiveS2 = if (s2 > 0) s2 else extractByteLengthFromHexPayload(i2)
 
-        if (!reserved.isNullOrBlank()) {
-            builder.appendLine("Reserved = $reserved")
+            if (effectiveS1 > 0) builder.appendLine("S1 = $effectiveS1")
+            if (effectiveS2 > 0) builder.appendLine("S2 = $effectiveS2")
+            if (s3 > 0) builder.appendLine("S3 = $s3")
+            if (s4 > 0) builder.appendLine("S4 = $s4")
+            if (h1 != 0L) builder.appendLine("H1 = $h1")
+            if (h2 != 0L) builder.appendLine("H2 = $h2")
+            if (h3 != 0L) builder.appendLine("H3 = $h3")
+            if (h4 != 0L) builder.appendLine("H4 = $h4")
+        } else {
+            builder.appendLine("H1 = 1")
+            builder.appendLine("H2 = 2")
+            builder.appendLine("H3 = 3")
+            builder.appendLine("H4 = 4")
         }
+        if (!i1.isNullOrBlank()) builder.appendLine("I1 = $i1")
+        if (!i2.isNullOrBlank()) builder.appendLine("I2 = $i2")
+        if (!i3.isNullOrBlank()) builder.appendLine("I3 = $i3")
+        if (!i4.isNullOrBlank()) builder.appendLine("I4 = $i4")
+        if (!sni.isNullOrBlank()) builder.appendLine("SNI = $sni")
+        if (!reserved.isNullOrBlank()) builder.appendLine("Reserved = $reserved")
 
         builder.appendLine()
         builder.appendLine("[Peer]")
@@ -110,7 +113,7 @@ data class AwgConfig(
         if (!presharedKey.isNullOrBlank()) {
             builder.appendLine("PresharedKey = $presharedKey")
         }
-        val cleanAllowed = if (allowedIps.isNotBlank()) allowedIps else "0.0.0.0/0, ::/0"
+        val cleanAllowed = if (allowedIps.isNotBlank()) allowedIps.trim() else "0.0.0.0/0, ::/0"
         builder.appendLine("AllowedIPs = $cleanAllowed")
         val cleanEndpoint = sanitizeEndpoint(endpoint, defaultPort = if (isWarp) 854 else 51820)
         builder.appendLine("Endpoint = $cleanEndpoint")
@@ -186,6 +189,13 @@ data class AwgConfig(
     }
 
     companion object {
+        fun extractByteLengthFromHexPayload(v: String?): Int {
+            if (v.isNullOrBlank()) return 0
+            val clean = v.trim().removePrefix("<b ").removeSuffix(">").removePrefix("0x").trim()
+            val hexOnly = clean.takeWhile { it.isDigit() || it in 'a'..'f' || it in 'A'..'F' }
+            return (hexOnly.length / 2).coerceIn(0, 1420)
+        }
+
         fun sanitizeEndpoint(raw: String?, defaultPort: Int = 51820): String {
             val trimmed = raw?.trim().orEmpty()
             if (trimmed.isBlank()) return "188.114.97.1:$defaultPort"
