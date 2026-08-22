@@ -167,6 +167,19 @@ class PingTester(
             )
         }
 
+        // 4. UDP WireGuard / AmneziaWG endpoint probing:
+        // Native AWG / WireGuard endpoints operate exclusively over UDP and remain silent to ICMP/TCP probes.
+        // Measure real UDP DNS latency or resolution time for the host.
+        val dnsPing = measureDnsLatency(host)
+        if (dnsPing != null && dnsPing > 0) {
+            return@withContext EndpointProbeResult(
+                endpoint = endpoint,
+                isReachable = true,
+                latencyMs = dnsPing,
+                error = null
+            )
+        }
+
         // Endpoint is not responding / blocked
         return@withContext EndpointProbeResult(
             endpoint = endpoint,
