@@ -104,6 +104,7 @@ class NetworkEgressVerifier(
     private fun tryCloudflareTrace(): NetworkEgressResult? {
         val endpoints = listOf(
             "https://1.1.1.1/cdn-cgi/trace",
+            "https://188.114.97.1/cdn-cgi/trace",
             "https://www.cloudflare.com/cdn-cgi/trace",
             "https://cloudflare-dns.com/cdn-cgi/trace"
         )
@@ -128,6 +129,7 @@ class NetworkEgressVerifier(
                         val warp = lines["warp"]
 
                         if (!ip.isNullOrBlank()) {
+                            com.example.App.instance.tunnelManager.log("EGRESS_PROBE", "Cloudflare Trace Probe Success ($url) -> Public IP=$ip, Loc=$loc, WARP=$warp")
                             return NetworkEgressResult(
                                 isFunctional = true,
                                 publicIp = ip,
@@ -138,10 +140,12 @@ class NetworkEgressVerifier(
                                 testedAt = System.currentTimeMillis()
                             )
                         }
+                    } else {
+                        com.example.App.instance.tunnelManager.log("EGRESS_PROBE", "Cloudflare Trace Probe HTTP ${response.code} from $url")
                     }
                 }
-            } catch (_: Exception) {
-                // Try next endpoint
+            } catch (e: Exception) {
+                com.example.App.instance.tunnelManager.log("EGRESS_PROBE", "Cloudflare Trace Probe failed for $url: ${e.message}")
             }
         }
         return null
@@ -185,9 +189,12 @@ class NetworkEgressVerifier(
                 val respBuf = ByteArray(512)
                 val respPkt = DatagramPacket(respBuf, respBuf.size)
                 ds.receive(respPkt)
-                respPkt.length > 12
+                val ok = respPkt.length > 12
+                com.example.App.instance.tunnelManager.log("DNS_PROBE", "UDP 1.1.1.1:53 DNS probe -> Received ${respPkt.length}B (Functional=$ok)")
+                ok
             }
-        } catch (_: Exception) {
+        } catch (e: Exception) {
+            com.example.App.instance.tunnelManager.log("DNS_PROBE", "UDP 1.1.1.1:53 DNS probe failed: ${e.message}")
             false
         }
     }

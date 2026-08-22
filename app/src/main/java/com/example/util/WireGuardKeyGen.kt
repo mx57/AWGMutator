@@ -1,7 +1,6 @@
 package com.example.util
 
-import com.wireguard.crypto.Key
-import com.wireguard.crypto.KeyPair
+import org.amnezia.awg.crypto.KeyPair
 
 /**
  * Utility for generating WireGuard / AmneziaWG Curve25519 (X25519) key pairs and pre-shared keys
