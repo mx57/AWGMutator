@@ -104,7 +104,6 @@ class NetworkEgressVerifier(
     private fun tryCloudflareTrace(): NetworkEgressResult? {
         val endpoints = listOf(
             "https://1.1.1.1/cdn-cgi/trace",
-            "https://188.114.97.1/cdn-cgi/trace",
             "https://www.cloudflare.com/cdn-cgi/trace",
             "https://cloudflare-dns.com/cdn-cgi/trace"
         )
