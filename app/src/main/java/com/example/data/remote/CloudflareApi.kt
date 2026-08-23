@@ -249,12 +249,7 @@ class CloudflareApi(
                         ?: configJson.opt("client_id")
                         ?: regJson.opt("client_id")
 
-                    val reservedStr = when (rawClientId) {
-                        is org.json.JSONArray -> (0 until rawClientId.length()).map { rawClientId.optInt(it) }.joinToString(", ")
-                        is String -> rawClientId
-                        is Number -> rawClientId.toString()
-                        else -> null
-                    }
+                    val reservedStr = normalizeReserved(rawClientId)
 
                     return@withContext Result.success(
                         WarpConfig(
@@ -266,7 +261,7 @@ class CloudflareApi(
                             v6Address = if (v6Address.contains("/")) v6Address else "$v6Address/128",
                             endpointV4 = endpointV4,
                             endpointV6 = endpointV6,
-                            reserved = reservedStr ?: "12, 34, 56",
+                            reserved = reservedStr,
                             peerPublicKey = peerPublicKey,
                             warpPlusEnabled = !licenseKey.isNullOrBlank()
                         )
@@ -292,5 +287,36 @@ class CloudflareApi(
         val sdf = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS'Z'", Locale.US)
         sdf.timeZone = TimeZone.getTimeZone("UTC")
         return sdf.format(Date())
+    }
+
+    companion object {
+        fun normalizeReserved(raw: Any?): String {
+            if (raw == null) return "0, 0, 0"
+            return try {
+                when (raw) {
+                    is org.json.JSONArray -> (0 until raw.length()).map { raw.optInt(it) }.joinToString(", ")
+                    is String -> {
+                        val str = raw.trim()
+                        if (str.contains(",") || str.contains(" ")) {
+                            val clean = str.removeSurrounding("[", "]").removeSurrounding("(", ")")
+                            val parts = clean.split(Regex("[,\\s]+")).filter { it.isNotBlank() }
+                            val ints = parts.mapNotNull { it.toIntOrNull() }
+                            if (ints.isNotEmpty()) ints.joinToString(", ") else str
+                        } else {
+                            val bytes = android.util.Base64.decode(str, android.util.Base64.DEFAULT)
+                            if (bytes != null && bytes.isNotEmpty()) {
+                                bytes.map { (it.toInt() and 0xFF).toString() }.joinToString(", ")
+                            } else {
+                                str
+                            }
+                        }
+                    }
+                    is Number -> raw.toString()
+                    else -> raw.toString()
+                }
+            } catch (_: Exception) {
+                raw.toString()
+            }
+        }
     }
 }

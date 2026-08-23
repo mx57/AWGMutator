@@ -95,7 +95,10 @@ data class AwgConfig(
         if (!i3.isNullOrBlank()) builder.appendLine("I3 = $i3")
         if (!i4.isNullOrBlank()) builder.appendLine("I4 = $i4")
         if (!sni.isNullOrBlank()) builder.appendLine("SNI = $sni")
-        if (!reserved.isNullOrBlank()) builder.appendLine("Reserved = $reserved")
+        if (!reserved.isNullOrBlank()) {
+            val cleanReserved = com.example.data.remote.CloudflareApi.normalizeReserved(reserved)
+            builder.appendLine("Reserved = $cleanReserved")
+        }
 
         builder.appendLine()
         builder.appendLine("[Peer]")

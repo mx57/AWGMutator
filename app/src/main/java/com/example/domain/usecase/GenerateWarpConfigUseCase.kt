@@ -17,7 +17,7 @@ class GenerateWarpConfigUseCase(
         licenseKey: String? = null,
         dns: String = "1.1.1.1, 1.0.0.1",
         endpoint: String? = null,
-        mtu: Int = 1360
+        mtu: Int = 1280
     ): Result<AwgConfig> {
         return runCatching {
             val warpResult = cloudflareApi.generateWarpConfig(licenseKey = licenseKey)
@@ -27,7 +27,23 @@ class GenerateWarpConfigUseCase(
             if (!endpoint.isNullOrBlank()) {
                 awgConfig = awgConfig.copy(endpoint = endpoint)
             }
-            awgConfig = awgConfig.copy(dns = dns, mtu = mtu, originType = "WARP", createdAt = System.currentTimeMillis())
+            awgConfig = awgConfig.copy(
+                dns = dns,
+                mtu = mtu,
+                jc = 4,
+                jmin = 40,
+                jmax = 70,
+                s1 = 0,
+                s2 = 0,
+                s3 = 0,
+                s4 = 0,
+                h1 = 1L,
+                h2 = 2L,
+                h3 = 3L,
+                h4 = 4L,
+                originType = "WARP",
+                createdAt = System.currentTimeMillis()
+            )
 
             configRepository.saveConfig(awgConfig)
             awgConfig

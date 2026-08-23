@@ -27,19 +27,19 @@ class GenerateHybridWarpAwgUseCase(
 
             val hybrid = baseAwg.copy(
                 dns = dns,
-                endpoint = "188.114.97.1:854",
+                endpoint = baseAwg.endpoint.ifBlank { "188.114.97.1:854" },
                 mtu = 1280,
-                jc = 0,
-                jmin = 0,
-                jmax = 0,
+                jc = 5,
+                jmin = 40,
+                jmax = 80,
                 s1 = 0,
                 s2 = 0,
                 s3 = 0,
                 s4 = 0,
-                h1 = 0L,
-                h2 = 0L,
-                h3 = 0L,
-                h4 = 0L,
+                h1 = 1L,
+                h2 = 2L,
+                h3 = 3L,
+                h4 = 4L,
                 originType = "WARP_ANTI_DPI",
                 createdAt = System.currentTimeMillis()
             )
