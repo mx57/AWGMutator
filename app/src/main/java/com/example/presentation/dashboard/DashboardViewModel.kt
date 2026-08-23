@@ -254,12 +254,35 @@ class DashboardViewModel(
     fun fixBlockedEndpointAndReconnect(context: Context) {
         val currentConfig = _uiState.value.selectedConfig ?: configs.value.firstOrNull() ?: return
         viewModelScope.launch {
+            val candidateEndpoints = listOf(
+                "188.114.96.1:1074",
+                "188.114.98.1:4500",
+                "188.114.99.1:500",
+                "188.114.97.35:859",
+                "188.114.96.60:894",
+                "188.114.98.45:878",
+                "188.114.99.100:903",
+                "188.114.97.150:908",
+                "188.114.96.200:2408",
+                "188.114.97.10:1074",
+                "188.114.98.15:854",
+                "188.114.97.1:854"
+            )
+
+            // Pick next endpoint different from current
+            val currentEp = currentConfig.endpoint.trim()
+            val currentIndex = candidateEndpoints.indexOf(currentEp)
+            val nextEndpoint = if (currentIndex >= 0 && currentIndex < candidateEndpoints.size - 1) {
+                candidateEndpoints[currentIndex + 1]
+            } else {
+                candidateEndpoints.firstOrNull { it != currentEp } ?: "188.114.96.1:1074"
+            }
+
             val isWarpType = currentConfig.isWarp || currentConfig.name.contains("WARP", ignoreCase = true) || currentConfig.originType.contains("WARP", ignoreCase = true)
-            val cleanEndpoint = if (currentConfig.endpoint.isBlank()) "188.114.97.1:854" else currentConfig.endpoint
-            val cleanDns = if (currentConfig.dns.isBlank()) "1.1.1.1, 1.0.0.1" else currentConfig.dns
+            val cleanDns = if (currentConfig.dns.isBlank() || currentConfig.dns == "1.1.1.1, 1.0.0.1") "1.1.1.1, 8.8.8.8, 9.9.9.9" else currentConfig.dns
             val updatedConfig = if (isWarpType) {
                 currentConfig.copy(
-                    endpoint = cleanEndpoint,
+                    endpoint = nextEndpoint,
                     dns = cleanDns,
                     jc = 0, jmin = 0, jmax = 0,
                     s1 = 0, s2 = 0, s3 = 0, s4 = 0,
@@ -268,18 +291,46 @@ class DashboardViewModel(
                 )
             } else {
                 currentConfig.copy(
-                    endpoint = cleanEndpoint,
+                    endpoint = nextEndpoint,
                     dns = cleanDns
                 )
             }
             configRepository.updateConfig(updatedConfig)
             _uiState.value = _uiState.value.copy(
                 selectedConfig = updatedConfig,
-                userMessage = "Выполняется подключение к '${updatedConfig.name}'..."
+                userMessage = "Смена эндпоинта на $nextEndpoint. Переподключение..."
             )
             App.instance.tunnelManager.disconnect()
-            kotlinx.coroutines.delay(700)
+            kotlinx.coroutines.delay(800)
             App.instance.tunnelManager.connect(updatedConfig)
+        }
+    }
+
+    fun switchEndpointDirectly(newEndpoint: String) {
+        val currentConfig = _uiState.value.selectedConfig ?: configs.value.firstOrNull() ?: return
+        viewModelScope.launch {
+            val isWarpType = currentConfig.isWarp || currentConfig.name.contains("WARP", ignoreCase = true) || currentConfig.originType.contains("WARP", ignoreCase = true)
+            val updatedConfig = if (isWarpType) {
+                currentConfig.copy(
+                    endpoint = newEndpoint,
+                    jc = 0, jmin = 0, jmax = 0,
+                    s1 = 0, s2 = 0, s3 = 0, s4 = 0,
+                    h1 = 0L, h2 = 0L, h3 = 0L, h4 = 0L,
+                    isWarp = true
+                )
+            } else {
+                currentConfig.copy(endpoint = newEndpoint)
+            }
+            configRepository.updateConfig(updatedConfig)
+            _uiState.value = _uiState.value.copy(
+                selectedConfig = updatedConfig,
+                userMessage = "Установлен эндпоинт $newEndpoint"
+            )
+            if (App.instance.tunnelManager.status.value.state == VpnState.CONNECTED) {
+                App.instance.tunnelManager.disconnect()
+                kotlinx.coroutines.delay(600)
+                App.instance.tunnelManager.connect(updatedConfig)
+            }
         }
     }
 

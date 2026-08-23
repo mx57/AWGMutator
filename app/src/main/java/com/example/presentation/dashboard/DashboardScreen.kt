@@ -364,7 +364,7 @@ fun DashboardScreen(
             }
         }
 
-        val isHandshakeBlocked = (vpnStatus.state == VpnState.CONNECTED && vpnStatus.txBytes > 100 && vpnStatus.rxBytes == 0L) ||
+        val isHandshakeBlocked = (vpnStatus.state == VpnState.CONNECTED && vpnStatus.txBytes > 1000 && vpnStatus.rxBytes <= 100L) ||
                 (activeConfig != null && (activeConfig.endpoint.startsWith("162.159.192") || activeConfig.endpoint.startsWith("162.159.193")))
 
         if (isHandshakeBlocked) {
@@ -380,14 +380,14 @@ fun DashboardScreen(
                         Icon(Icons.Default.Warning, contentDescription = null, tint = DangerRed)
                         Spacer(modifier = Modifier.width(8.dp))
                         Text(
-                            text = "Обнаружена блокировка DPI (Tx > 0, Rx = 0)",
+                            text = if (vpnStatus.rxBytes == 92L) "Блокировка данных ТСПУ / DPI (Rx = 92 B)" else "Обнаружена блокировка DPI (Tx > 0, Rx ≤ 100)",
                             style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
                             color = DangerRed
                         )
                     }
                     Spacer(modifier = Modifier.height(6.dp))
                     Text(
-                        text = "Эндпоинт '${activeConfig?.endpoint}' заблокирован провайдером / ТСПУ (пакеты рукопожатия не получают ответа). Нажмите кнопку ниже, чтобы автоматически переключить на рабочий незаблокированный эндпоинт 188.114.97.1:854.",
+                        text = "Эндпоинт '${activeConfig?.endpoint}' фильтруется провайдером / ТСПУ (данные не проходят). Переключитесь на альтернативный обходной порт или выберите чистый адрес:",
                         style = MaterialTheme.typography.bodySmall,
                         color = MaterialTheme.colorScheme.onSurface
                     )
@@ -400,7 +400,29 @@ fun DashboardScreen(
                     ) {
                         Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(16.dp))
                         Spacer(modifier = Modifier.width(6.dp))
-                        Text("⚡ Заменить на чистый эндпоинт и переподключить", fontWeight = FontWeight.Bold)
+                        Text("⚡ Ротировать на следующий чистый эндпоинт", fontWeight = FontWeight.Bold)
+                    }
+                    Spacer(modifier = Modifier.height(8.dp))
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp)
+                    ) {
+                        listOf(
+                            Pair("1074", "188.114.96.1:1074"),
+                            Pair("4500 (NAT-T)", "188.114.98.1:4500"),
+                            Pair("500 (IPsec)", "188.114.99.1:500"),
+                            Pair("859", "188.114.97.35:859")
+                        ).forEach { (label, ep) ->
+                            OutlinedButton(
+                                onClick = { viewModel.switchEndpointDirectly(ep) },
+                                modifier = Modifier.weight(1f),
+                                shape = RoundedCornerShape(6.dp),
+                                border = BorderStroke(1.dp, DangerRed.copy(alpha = 0.6f)),
+                                contentPadding = androidx.compose.foundation.layout.PaddingValues(horizontal = 2.dp, vertical = 4.dp)
+                            ) {
+                                Text(label, style = MaterialTheme.typography.labelSmall, maxLines = 1, color = MaterialTheme.colorScheme.onSurface)
+                            }
+                        }
                     }
                 }
             }
