@@ -17,22 +17,10 @@ import java.util.concurrent.TimeUnit
  */
 class NetworkEgressVerifier(
     private val client: OkHttpClient = OkHttpClient.Builder()
-        .dns(object : okhttp3.Dns {
-            override fun lookup(hostname: String): List<InetAddress> {
-                if (hostname.contains("cloudflare", ignoreCase = true)) {
-                    val directIps = listOf("188.114.97.1", "188.114.96.1", "1.1.1.1")
-                    val resolved = directIps.mapNotNull { ip ->
-                        runCatching { InetAddress.getByName(ip) }.getOrNull()
-                    }
-                    if (resolved.isNotEmpty()) return resolved
-                }
-                return okhttp3.Dns.SYSTEM.lookup(hostname)
-            }
-        })
-        .connectTimeout(2000, TimeUnit.MILLISECONDS)
-        .readTimeout(2000, TimeUnit.MILLISECONDS)
-        .callTimeout(2500, TimeUnit.MILLISECONDS)
-        .retryOnConnectionFailure(false)
+        .connectTimeout(4000, TimeUnit.MILLISECONDS)
+        .readTimeout(4000, TimeUnit.MILLISECONDS)
+        .callTimeout(5000, TimeUnit.MILLISECONDS)
+        .retryOnConnectionFailure(true)
         .build()
 ) {
 
@@ -154,6 +142,7 @@ class NetworkEgressVerifier(
         val ipEndpoints = listOf(
             "https://api.ipify.org",
             "https://icanhazip.com",
+            "https://checkip.amazonaws.com",
             "https://ifconfig.me/ip"
         )
         for (url in ipEndpoints) {
@@ -173,28 +162,33 @@ class NetworkEgressVerifier(
     }
 
     private fun checkDnsResolution(): Boolean {
-        return try {
-            val query = byteArrayOf(
-                0x12, 0x34, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00,
-                0x00, 0x00, 0x00, 0x00,
-                0x06, 0x67, 0x6f, 0x6f, 0x67, 0x6c, 0x65,
-                0x03, 0x63, 0x6f, 0x6d,
-                0x00, 0x00, 0x01, 0x00, 0x01
-            )
-            DatagramSocket().use { ds ->
-                ds.soTimeout = 1500
-                val pkt = DatagramPacket(query, query.size, InetAddress.getByName("1.1.1.1"), 53)
-                ds.send(pkt)
-                val respBuf = ByteArray(512)
-                val respPkt = DatagramPacket(respBuf, respBuf.size)
-                ds.receive(respPkt)
-                val ok = respPkt.length > 12
-                com.example.App.instance.tunnelManager.log("DNS_PROBE", "UDP 1.1.1.1:53 DNS probe -> Received ${respPkt.length}B (Functional=$ok)")
-                ok
+        val servers = listOf("1.1.1.1", "8.8.8.8", "77.88.8.8")
+        val query = byteArrayOf(
+            0x12, 0x34, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00,
+            0x00, 0x00, 0x00, 0x00,
+            0x06, 0x67, 0x6f, 0x6f, 0x67, 0x6c, 0x65,
+            0x03, 0x63, 0x6f, 0x6d,
+            0x00, 0x00, 0x01, 0x00, 0x01
+        )
+        for (server in servers) {
+            try {
+                DatagramSocket().use { ds ->
+                    ds.soTimeout = 2000
+                    val pkt = DatagramPacket(query, query.size, InetAddress.getByName(server), 53)
+                    ds.send(pkt)
+                    val respBuf = ByteArray(512)
+                    val respPkt = DatagramPacket(respBuf, respBuf.size)
+                    ds.receive(respPkt)
+                    val ok = respPkt.length > 12
+                    if (ok) {
+                        com.example.App.instance.tunnelManager.log("DNS_PROBE", "UDP $server:53 DNS probe -> Received ${respPkt.length}B (Functional=true)")
+                        return true
+                    }
+                }
+            } catch (e: Exception) {
+                com.example.App.instance.tunnelManager.log("DNS_PROBE", "UDP $server:53 DNS probe failed: ${e.message}")
             }
-        } catch (e: Exception) {
-            com.example.App.instance.tunnelManager.log("DNS_PROBE", "UDP 1.1.1.1:53 DNS probe failed: ${e.message}")
-            false
         }
+        return false
     }
 }
