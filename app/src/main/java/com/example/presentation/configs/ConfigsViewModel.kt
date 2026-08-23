@@ -396,20 +396,7 @@ class ConfigsViewModel(
                 candidateEndpoints.firstOrNull { it != currentEp } ?: "188.114.96.1:1074"
             }
 
-            val isWarpType = config.isWarp || config.name.contains("WARP", ignoreCase = true) || config.originType.contains("WARP", ignoreCase = true)
-            val cleanDns = if (config.dns.isBlank() || config.dns.contains("111.88") || config.dns == "1.1.1.1, 1.0.0.1") "1.1.1.1, 8.8.8.8, 9.9.9.9" else config.dns
-            val updated = if (isWarpType) {
-                config.copy(
-                    endpoint = cleanEndpoint,
-                    dns = cleanDns,
-                    jc = 0, jmin = 0, jmax = 0,
-                    s1 = 0, s2 = 0, s3 = 0, s4 = 0,
-                    h1 = 0L, h2 = 0L, h3 = 0L, h4 = 0L,
-                    isWarp = true
-                )
-            } else {
-                config.copy(endpoint = cleanEndpoint, dns = cleanDns)
-            }
+            val updated = config.copy(endpoint = cleanEndpoint)
             configRepository.updateConfig(updated)
             withContext(Dispatchers.Main) {
                 _uiState.value = _uiState.value.copy(

@@ -169,9 +169,10 @@ object ConfigParser {
                 throw IllegalArgumentException("Missing Endpoint in [Peer]")
             }
 
-            val isWarp = !reserved.isNullOrBlank() || endpoint.contains("162.159.") || endpoint.contains("188.114.")
+            val isWarp = (!reserved.isNullOrBlank() || defaultName.contains("WARP", ignoreCase = true)) &&
+                    jc == 0 && s1 == 0 && s2 == 0 && (h1 == 0L || h1 == 1L)
 
-            val sanitizedEndpoint = AwgConfig.sanitizeEndpoint(endpoint, defaultPort = 1074)
+            val sanitizedEndpoint = AwgConfig.sanitizeEndpoint(endpoint, defaultPort = 51820)
 
             AwgConfig(
                 id = UUID.randomUUID().toString(),

@@ -278,23 +278,7 @@ class DashboardViewModel(
                 candidateEndpoints.firstOrNull { it != currentEp } ?: "188.114.96.1:1074"
             }
 
-            val isWarpType = currentConfig.isWarp || currentConfig.name.contains("WARP", ignoreCase = true) || currentConfig.originType.contains("WARP", ignoreCase = true)
-            val cleanDns = if (currentConfig.dns.isBlank() || currentConfig.dns == "1.1.1.1, 1.0.0.1") "1.1.1.1, 8.8.8.8, 9.9.9.9" else currentConfig.dns
-            val updatedConfig = if (isWarpType) {
-                currentConfig.copy(
-                    endpoint = nextEndpoint,
-                    dns = cleanDns,
-                    jc = 0, jmin = 0, jmax = 0,
-                    s1 = 0, s2 = 0, s3 = 0, s4 = 0,
-                    h1 = 0L, h2 = 0L, h3 = 0L, h4 = 0L,
-                    isWarp = true
-                )
-            } else {
-                currentConfig.copy(
-                    endpoint = nextEndpoint,
-                    dns = cleanDns
-                )
-            }
+            val updatedConfig = currentConfig.copy(endpoint = nextEndpoint)
             configRepository.updateConfig(updatedConfig)
             _uiState.value = _uiState.value.copy(
                 selectedConfig = updatedConfig,
@@ -309,18 +293,7 @@ class DashboardViewModel(
     fun switchEndpointDirectly(newEndpoint: String) {
         val currentConfig = _uiState.value.selectedConfig ?: configs.value.firstOrNull() ?: return
         viewModelScope.launch {
-            val isWarpType = currentConfig.isWarp || currentConfig.name.contains("WARP", ignoreCase = true) || currentConfig.originType.contains("WARP", ignoreCase = true)
-            val updatedConfig = if (isWarpType) {
-                currentConfig.copy(
-                    endpoint = newEndpoint,
-                    jc = 0, jmin = 0, jmax = 0,
-                    s1 = 0, s2 = 0, s3 = 0, s4 = 0,
-                    h1 = 0L, h2 = 0L, h3 = 0L, h4 = 0L,
-                    isWarp = true
-                )
-            } else {
-                currentConfig.copy(endpoint = newEndpoint)
-            }
+            val updatedConfig = currentConfig.copy(endpoint = newEndpoint)
             configRepository.updateConfig(updatedConfig)
             _uiState.value = _uiState.value.copy(
                 selectedConfig = updatedConfig,
