@@ -76,30 +76,20 @@ data class AwgConfig(
             builder.appendLine("MTU = $mtu")
         }
 
-        val isCloudflareWarpEndpoint = (isWarp || peerPublicKey == "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=") &&
-                (h1 == 0L || h1 == 1L) && jc == 0 && s1 == 0
+        if (jc > 0) builder.appendLine("Jc = $jc")
+        if (jmin > 0) builder.appendLine("Jmin = $jmin")
+        if (jmax > 0) builder.appendLine("Jmax = $jmax")
+        val effectiveS1 = if (s1 > 0) s1 else extractByteLengthFromHexPayload(i1)
+        val effectiveS2 = if (s2 > 0) s2 else extractByteLengthFromHexPayload(i2)
 
-        if (!isCloudflareWarpEndpoint) {
-            if (jc > 0) builder.appendLine("Jc = $jc")
-            if (jmin > 0) builder.appendLine("Jmin = $jmin")
-            if (jmax > 0) builder.appendLine("Jmax = $jmax")
-            val effectiveS1 = if (s1 > 0) s1 else extractByteLengthFromHexPayload(i1)
-            val effectiveS2 = if (s2 > 0) s2 else extractByteLengthFromHexPayload(i2)
-
-            if (effectiveS1 > 0) builder.appendLine("S1 = $effectiveS1")
-            if (effectiveS2 > 0) builder.appendLine("S2 = $effectiveS2")
-            if (s3 > 0) builder.appendLine("S3 = $s3")
-            if (s4 > 0) builder.appendLine("S4 = $s4")
-            if (h1 != 0L) builder.appendLine("H1 = $h1")
-            if (h2 != 0L) builder.appendLine("H2 = $h2")
-            if (h3 != 0L) builder.appendLine("H3 = $h3")
-            if (h4 != 0L) builder.appendLine("H4 = $h4")
-        } else {
-            builder.appendLine("H1 = 1")
-            builder.appendLine("H2 = 2")
-            builder.appendLine("H3 = 3")
-            builder.appendLine("H4 = 4")
-        }
+        if (effectiveS1 > 0) builder.appendLine("S1 = $effectiveS1")
+        if (effectiveS2 > 0) builder.appendLine("S2 = $effectiveS2")
+        if (s3 > 0) builder.appendLine("S3 = $s3")
+        if (s4 > 0) builder.appendLine("S4 = $s4")
+        if (h1 != 0L) builder.appendLine("H1 = $h1")
+        if (h2 != 0L) builder.appendLine("H2 = $h2")
+        if (h3 != 0L) builder.appendLine("H3 = $h3")
+        if (h4 != 0L) builder.appendLine("H4 = $h4")
         if (!i1.isNullOrBlank()) builder.appendLine("I1 = $i1")
         if (!i2.isNullOrBlank()) builder.appendLine("I2 = $i2")
         if (!i3.isNullOrBlank()) builder.appendLine("I3 = $i3")
