@@ -374,9 +374,21 @@ class ConfigsViewModel(
 
     fun fixConfigEndpoint(config: AwgConfig) {
         viewModelScope.launch(Dispatchers.IO) {
+            val isWarpType = config.isWarp || config.name.contains("WARP", ignoreCase = true) || config.originType.contains("WARP", ignoreCase = true)
             val cleanEndpoint = "188.114.97.1:854"
             val cleanDns = if (config.dns.isBlank() || config.dns.contains("111.88")) "1.1.1.1, 1.0.0.1" else config.dns
-            val updated = config.copy(endpoint = cleanEndpoint, dns = cleanDns)
+            val updated = if (isWarpType) {
+                config.copy(
+                    endpoint = cleanEndpoint,
+                    dns = cleanDns,
+                    jc = 0, jmin = 0, jmax = 0,
+                    s1 = 0, s2 = 0, s3 = 0, s4 = 0,
+                    h1 = 0L, h2 = 0L, h3 = 0L, h4 = 0L,
+                    isWarp = true
+                )
+            } else {
+                config.copy(endpoint = cleanEndpoint, dns = cleanDns)
+            }
             configRepository.updateConfig(updated)
             withContext(Dispatchers.Main) {
                 _uiState.value = _uiState.value.copy(

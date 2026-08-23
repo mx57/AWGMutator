@@ -254,12 +254,24 @@ class DashboardViewModel(
     fun fixBlockedEndpointAndReconnect(context: Context) {
         val currentConfig = _uiState.value.selectedConfig ?: configs.value.firstOrNull() ?: return
         viewModelScope.launch {
+            val isWarpType = currentConfig.isWarp || currentConfig.name.contains("WARP", ignoreCase = true) || currentConfig.originType.contains("WARP", ignoreCase = true)
             val cleanEndpoint = if (currentConfig.endpoint.isBlank()) "188.114.97.1:854" else currentConfig.endpoint
             val cleanDns = if (currentConfig.dns.isBlank()) "1.1.1.1, 1.0.0.1" else currentConfig.dns
-            val updatedConfig = currentConfig.copy(
-                endpoint = cleanEndpoint,
-                dns = cleanDns
-            )
+            val updatedConfig = if (isWarpType) {
+                currentConfig.copy(
+                    endpoint = cleanEndpoint,
+                    dns = cleanDns,
+                    jc = 0, jmin = 0, jmax = 0,
+                    s1 = 0, s2 = 0, s3 = 0, s4 = 0,
+                    h1 = 0L, h2 = 0L, h3 = 0L, h4 = 0L,
+                    isWarp = true
+                )
+            } else {
+                currentConfig.copy(
+                    endpoint = cleanEndpoint,
+                    dns = cleanDns
+                )
+            }
             configRepository.updateConfig(updatedConfig)
             _uiState.value = _uiState.value.copy(
                 selectedConfig = updatedConfig,

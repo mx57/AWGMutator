@@ -104,8 +104,7 @@ class AwgVpnService : VpnService() {
         acquireWakeLocks()
         App.instance.tunnelManager.log("VPN_ROUTING", "Starting TUN initialization for '${rawConfig.name}'")
 
-        // Apply DpiNoiseManager runtime handshake modulation and noise injection
-        val config = App.instance.dpiNoiseManager.applyRuntimeNoiseModulation(rawConfig)
+        val config = rawConfig
         App.instance.tunnelManager.log(
             "ANTI_DPI",
             "Obfuscation parameters: Jc=${config.jc}, Jmin=${config.jmin}, Jmax=${config.jmax}, S1=${config.s1}, S2=${config.s2}, H1=${config.h1}, H2=${config.h2}, H3=${config.h3}, H4=${config.h4}"

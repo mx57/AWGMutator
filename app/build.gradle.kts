@@ -20,7 +20,7 @@ android {
   }
 
   defaultConfig {
-    applicationId = "com.aistudio.awgmutator.vpevol"
+    applicationId = "org.amnezia.awg"
     minSdk = 26
     targetSdk = 36
     versionCode = 1

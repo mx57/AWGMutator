@@ -114,7 +114,19 @@ class TunnelManager(private val context: Context) {
         _status.value = _status.value.copy(rxBytes = rx, txBytes = tx)
     }
 
-    fun connect(config: AwgConfig) {
+    fun connect(rawConfig: AwgConfig) {
+        val isWarpType = rawConfig.isWarp || rawConfig.name.contains("WARP", ignoreCase = true) || rawConfig.originType.contains("WARP", ignoreCase = true)
+        val config = if (isWarpType && (rawConfig.jc > 0 || rawConfig.s1 > 0 || rawConfig.s2 > 0 || (rawConfig.h1 > 0L && rawConfig.h1 != 1L))) {
+            rawConfig.copy(
+                jc = 0, jmin = 0, jmax = 0,
+                s1 = 0, s2 = 0, s3 = 0, s4 = 0,
+                h1 = 0L, h2 = 0L, h3 = 0L, h4 = 0L,
+                isWarp = true
+            )
+        } else {
+            rawConfig
+        }
+
         val sanitizedEndpoint = AwgConfig.sanitizeEndpoint(config.endpoint, defaultPort = if (config.isWarp) 854 else 51820)
         log("DEVICE_INFO", "Device: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}, Android ${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT})")
         log("TUN_LIFECYCLE", "Initiating connection to '${config.name}' (Target Endpoint: $sanitizedEndpoint)")
