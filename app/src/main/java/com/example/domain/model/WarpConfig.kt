@@ -22,6 +22,7 @@ data class WarpConfig(
         val cleanV6 = if (v6Address.contains("/")) v6Address else "$v6Address/128"
         val formattedV4 = cleanV4.replace(Regex("(/32)+"), "/32")
         val formattedV6 = cleanV6.replace(Regex("(/128)+"), "/128")
+        val warpH1 = AwgConfig.calculateWarpH1(reserved)
 
         return AwgConfig(
             name = name,
@@ -36,7 +37,7 @@ data class WarpConfig(
             s2 = 0,
             s3 = 0,
             s4 = 0,
-            h1 = 1L,
+            h1 = warpH1,
             h2 = 2L,
             h3 = 3L,
             h4 = 4L,

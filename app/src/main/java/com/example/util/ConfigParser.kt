@@ -172,7 +172,8 @@ object ConfigParser {
                 s2 = 0
                 s3 = 0
                 s4 = 0
-                h1 = 1L
+                val warpH1 = AwgConfig.calculateWarpH1(reserved)
+                h1 = if (warpH1 != 1L) warpH1 else (if (h1 > 4L) h1 else 1L)
                 h2 = 2L
                 h3 = 3L
                 h4 = 4L

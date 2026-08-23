@@ -86,7 +86,14 @@ data class AwgConfig(
         if (effectiveS2 > 0) builder.appendLine("S2 = $effectiveS2")
         if (s3 > 0) builder.appendLine("S3 = $s3")
         if (s4 > 0) builder.appendLine("S4 = $s4")
-        if (h1 > 0L && (h1 != 1L || jc > 0 || effectiveS1 > 0)) builder.appendLine("H1 = $h1")
+
+        val effectiveH1 = if ((isWarp || !reserved.isNullOrBlank()) && h1 <= 4L) {
+            calculateWarpH1(reserved)
+        } else {
+            h1
+        }
+
+        if (effectiveH1 > 0L && (effectiveH1 != 1L || jc > 0 || effectiveS1 > 0)) builder.appendLine("H1 = $effectiveH1")
         if (h2 > 0L && (h2 != 2L || jc > 0 || effectiveS1 > 0)) builder.appendLine("H2 = $h2")
         if (h3 > 0L && (h3 != 3L || jc > 0 || effectiveS1 > 0)) builder.appendLine("H3 = $h3")
         if (h4 > 0L && (h4 != 4L || jc > 0 || effectiveS1 > 0)) builder.appendLine("H4 = $h4")
@@ -182,6 +189,34 @@ data class AwgConfig(
     }
 
     companion object {
+        fun parseReservedBytes(reservedStr: String?): Triple<Int, Int, Int>? {
+            if (reservedStr.isNullOrBlank()) return null
+            val clean = reservedStr.trim().removePrefix("[").removeSuffix("]").trim()
+            val parts = clean.split(Regex("[,\\s]+")).map { it.trim() }.filter { it.isNotEmpty() }
+            if (parts.size == 3) {
+                val b0 = parts[0].toIntOrNull()
+                val b1 = parts[1].toIntOrNull()
+                val b2 = parts[2].toIntOrNull()
+                if (b0 != null && b1 != null && b2 != null) {
+                    return Triple(b0 and 0xFF, b1 and 0xFF, b2 and 0xFF)
+                }
+            }
+            try {
+                val decoded = android.util.Base64.decode(clean, android.util.Base64.DEFAULT)
+                if (decoded.size >= 3) {
+                    return Triple(decoded[0].toInt() and 0xFF, decoded[1].toInt() and 0xFF, decoded[2].toInt() and 0xFF)
+                }
+            } catch (_: Exception) {}
+            return null
+        }
+
+        fun calculateWarpH1(reservedStr: String?): Long {
+            val triple = parseReservedBytes(reservedStr) ?: return 1L
+            val (b0, b1, b2) = triple
+            // Little-Endian WireGuard handshake initiation header uint32: [0x01 (Type=Initiation), b0, b1, b2]
+            return 1L or (b0.toLong() shl 8) or (b1.toLong() shl 16) or (b2.toLong() shl 24)
+        }
+
         fun extractByteLengthFromHexPayload(v: String?): Int {
             if (v.isNullOrBlank()) return 0
             val clean = v.trim().removePrefix("<b ").removeSuffix(">").removePrefix("0x").trim()

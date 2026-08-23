@@ -135,12 +135,14 @@ class TunnelManager(private val context: Context) {
                 cleanEndpoint = "188.114.97.1:$port"
             }
 
+            val warpH1 = AwgConfig.calculateWarpH1(config.reserved)
+
             config = config.copy(
                 s1 = 0,
                 s2 = 0,
                 s3 = 0,
                 s4 = 0,
-                h1 = 1L,
+                h1 = if (warpH1 != 1L) warpH1 else (if (config.h1 > 4L) config.h1 else 1L),
                 h2 = 2L,
                 h3 = 3L,
                 h4 = 4L,
