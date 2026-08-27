@@ -79,13 +79,14 @@ data class AwgConfig(
         if (jc > 0) builder.appendLine("Jc = $jc")
         if (jmin > 0) builder.appendLine("Jmin = $jmin")
         if (jmax > 0) builder.appendLine("Jmax = $jmax")
-        val effectiveS1 = if (s1 > 0) s1 else extractByteLengthFromHexPayload(i1)
-        val effectiveS2 = if (s2 > 0) s2 else extractByteLengthFromHexPayload(i2)
+
+        val effectiveS1 = if (isWarp) 0 else (if (s1 > 0) s1 else extractByteLengthFromHexPayload(i1))
+        val effectiveS2 = if (isWarp) 0 else (if (s2 > 0) s2 else extractByteLengthFromHexPayload(i2))
 
         if (effectiveS1 > 0) builder.appendLine("S1 = $effectiveS1")
         if (effectiveS2 > 0) builder.appendLine("S2 = $effectiveS2")
-        if (s3 > 0) builder.appendLine("S3 = $s3")
-        if (s4 > 0) builder.appendLine("S4 = $s4")
+        if (s3 > 0 && !isWarp) builder.appendLine("S3 = $s3")
+        if (s4 > 0 && !isWarp) builder.appendLine("S4 = $s4")
 
         val effectiveH1 = if ((isWarp || !reserved.isNullOrBlank()) && h1 <= 4L) {
             val calc = calculateWarpH1(reserved)
@@ -93,6 +94,9 @@ data class AwgConfig(
         } else {
             h1
         }
+        val effectiveH2 = if (isWarp) (if (h2 > 0L) h2 else 2L) else h2
+        val effectiveH3 = if (isWarp) (if (h3 > 0L) h3 else 3L) else h3
+        val effectiveH4 = if (isWarp) (if (h4 > 0L) h4 else 4L) else h4
 
         if (effectiveH1 > 0L) builder.appendLine("H1 = $effectiveH1")
         if (h2 > 0L) builder.appendLine("H2 = $h2")
