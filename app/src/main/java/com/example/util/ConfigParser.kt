@@ -162,30 +162,23 @@ object ConfigParser {
 
             // Detect Cloudflare WARP configurations
             val isCloudflareWarp = peerPublicKey.trim() == "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=" ||
-                    endpoint.contains("cloudflareclient.com", ignoreCase = true) ||
-                    defaultName.contains("WARP", ignoreCase = true)
+                    endpoint.contains("cloudflareclient.com", ignoreCase = true)
 
             if (isCloudflareWarp) {
-                // Cloudflare WARP servers use standard WireGuard packet types (H1=1, H2=2, H3=3, H4=4)
-                // and strictly reject non-zero S1..S4 junk prefixes on the handshake initiation.
-                s1 = 0
-                s2 = 0
-                s3 = 0
-                s4 = 0
+                // Cloudflare WireGuard server protocol strictly requires standard init packet format (S1=0, S2=0) unless specified.
                 val warpH1 = AwgConfig.calculateWarpH1(reserved)
-                if (h1 == 0L || h1 == 1L) {
+                if (h1 == 0L) {
                     h1 = if (warpH1 != 1L) warpH1 else 1L
                 }
                 if (h2 == 0L) h2 = 2L
                 if (h3 == 0L) h3 = 3L
                 if (h4 == 0L) h4 = 4L
-
                 if (jc == 0) {
                     jc = 4
                     jmin = 40
                     jmax = 70
                 }
-                mtu = 1280
+                if (mtu == 0) mtu = 1280
 
                 // Sanitize DNS: if DNS is empty, dead, or contains China Telecom / unroutable addresses (e.g. 111.88.96.50)
                 if (dns.isBlank() || dns.contains("111.88.") || dns.contains("0.0.0.0")) {
