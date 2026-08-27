@@ -116,14 +116,10 @@ class TunnelManager(private val context: Context) {
 
     fun connect(rawConfig: AwgConfig) {
         val isCloudflareWarp = rawConfig.peerPublicKey.trim() == "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=" ||
-                rawConfig.isWarp ||
-                rawConfig.name.contains("WARP", ignoreCase = true) ||
-                !rawConfig.reserved.isNullOrBlank()
+                rawConfig.isWarp
 
         var config = rawConfig
         if (isCloudflareWarp) {
-            // Cloudflare WARP requires standard WireGuard handshake packet format (S1=0, S2=0).
-            // Jc=4 (Anti-DPI packet noise) safely bypasses DPI without corrupting handshake initiation.
             var cleanDns = config.dns
             if (cleanDns.isBlank() || cleanDns.contains("111.88.") || cleanDns.contains("0.0.0.0")) {
                 cleanDns = "1.1.1.1, 1.0.0.1, 8.8.8.8"
@@ -138,14 +134,10 @@ class TunnelManager(private val context: Context) {
             val warpH1 = AwgConfig.calculateWarpH1(config.reserved)
 
             config = config.copy(
-                s1 = 0,
-                s2 = 0,
-                s3 = 0,
-                s4 = 0,
-                h1 = if (warpH1 != 1L) warpH1 else (if (config.h1 > 4L) config.h1 else 1L),
-                h2 = 2L,
-                h3 = 3L,
-                h4 = 4L,
+                h1 = if (warpH1 != 1L) warpH1 else (if (config.h1 > 0L) config.h1 else 1L),
+                h2 = if (config.h2 > 0L) config.h2 else 2L,
+                h3 = if (config.h3 > 0L) config.h3 else 3L,
+                h4 = if (config.h4 > 0L) config.h4 else 4L,
                 jc = if (config.jc > 0) config.jc else 4,
                 jmin = if (config.jmin > 0) config.jmin else 40,
                 jmax = if (config.jmax > 0) config.jmax else 70,
