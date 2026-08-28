@@ -187,16 +187,8 @@ object ConfigParser {
                 }
                 if (mtu == 0) mtu = 1280
 
-                // Sanitize DNS: if DNS is empty, dead, or contains China Telecom / unroutable addresses (e.g. 111.88.96.50)
-                if (dns.isBlank() || dns.contains("111.88.") || dns.contains("0.0.0.0")) {
+                if (dns.isBlank() || dns.contains("0.0.0.0")) {
                     dns = "1.1.1.1, 1.0.0.1, 8.8.8.8"
-                }
-
-                // If endpoint is on known blocked Cloudflare prefixes (162.159.192.x / 162.159.193.x in RU)
-                val epClean = endpoint.trim().lowercase()
-                if (epClean.startsWith("162.159.192.") || epClean.startsWith("162.159.193.") || epClean.contains("engage.cloudflareclient.com")) {
-                    val port = epClean.substringAfterLast(":", "854").toIntOrNull() ?: 854
-                    endpoint = "188.114.97.1:$port"
                 }
             } else {
                 // For private AmneziaWG servers
@@ -235,10 +227,10 @@ object ConfigParser {
                 h2 = h2,
                 h3 = h3,
                 h4 = h4,
-                i1 = if (isCloudflareWarp) null else i1,
-                i2 = if (isCloudflareWarp) null else i2,
-                i3 = if (isCloudflareWarp) null else i3,
-                i4 = if (isCloudflareWarp) null else i4,
+                i1 = i1,
+                i2 = i2,
+                i3 = i3,
+                i4 = i4,
                 sni = sni,
                 peerPublicKey = peerPublicKey,
                 presharedKey = presharedKey,

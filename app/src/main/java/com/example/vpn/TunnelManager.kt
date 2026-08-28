@@ -121,14 +121,8 @@ class TunnelManager(private val context: Context) {
         var config = rawConfig
         if (isCloudflareWarp) {
             var cleanDns = config.dns
-            if (cleanDns.isBlank() || cleanDns.contains("111.88.") || cleanDns.contains("0.0.0.0")) {
+            if (cleanDns.isBlank() || cleanDns.contains("0.0.0.0")) {
                 cleanDns = "1.1.1.1, 1.0.0.1, 8.8.8.8"
-            }
-
-            var cleanEndpoint = config.endpoint.trim()
-            if (cleanEndpoint.startsWith("162.159.192.") || cleanEndpoint.startsWith("162.159.193.") || cleanEndpoint.contains("engage.cloudflareclient.com")) {
-                val port = cleanEndpoint.substringAfterLast(":", "854").toIntOrNull() ?: 854
-                cleanEndpoint = "188.114.97.1:$port"
             }
 
             val warpH1 = AwgConfig.calculateWarpH1(config.reserved)
@@ -143,7 +137,7 @@ class TunnelManager(private val context: Context) {
                 jmax = if (config.jmax > 0) config.jmax else 70,
                 mtu = if (config.mtu in 1200..1360) config.mtu else 1280,
                 dns = cleanDns,
-                endpoint = cleanEndpoint,
+                endpoint = config.endpoint.ifBlank { "188.114.97.1:854" },
                 isWarp = true
             )
         }
