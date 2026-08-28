@@ -79,7 +79,8 @@ object ConfigParser {
                 val equalsIdx = line.indexOf('=')
                 if (equalsIdx == -1) continue
 
-                val key = line.substring(0, equalsIdx).trim().lowercase()
+                val rawKey = line.substring(0, equalsIdx).trim()
+                val key = rawKey.lowercase()
                 val value = line.substring(equalsIdx + 1).trim()
 
                 when (currentSection) {
@@ -161,39 +162,27 @@ object ConfigParser {
 
             // Detect Cloudflare WARP configurations
             val isCloudflareWarp = peerPublicKey.trim() == "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=" ||
-                    defaultName.contains("WARP", ignoreCase = true) ||
-                    !reserved.isNullOrBlank() ||
-                    endpoint.contains("cloudflareclient.com", ignoreCase = true)
+                    endpoint.contains("cloudflareclient.com", ignoreCase = true) ||
+                    defaultName.contains("WARP", ignoreCase = true)
 
             if (isCloudflareWarp) {
-                // Cloudflare WireGuard server protocol strictly requires standard init packet format (S1=0, S2=0).
-                // Packet noise (Jc=4) before initiation safely bypasses DPI without corrupting handshake.
-                s1 = 0
-                s2 = 0
-                s3 = 0
-                s4 = 0
                 val warpH1 = AwgConfig.calculateWarpH1(reserved)
-                h1 = if (warpH1 != 1L) warpH1 else (if (h1 > 4L) h1 else 1L)
-                h2 = 2L
-                h3 = 3L
-                h4 = 4L
+                if (h1 == 0L) {
+                    h1 = if (warpH1 != 1L) warpH1 else 1L
+                }
+                if (h2 == 0L) h2 = 2L
+                if (h3 == 0L) h3 = 3L
+                if (h4 == 0L) h4 = 4L
+
                 if (jc == 0) {
                     jc = 4
                     jmin = 40
                     jmax = 70
                 }
-                mtu = 1280
+                if (mtu == 0) mtu = 1280
 
-                // Sanitize DNS: if DNS is empty, dead, or contains China Telecom / unroutable addresses (e.g. 111.88.96.50)
-                if (dns.isBlank() || dns.contains("111.88.") || dns.contains("0.0.0.0")) {
+                if (dns.isBlank() || dns.contains("0.0.0.0")) {
                     dns = "1.1.1.1, 1.0.0.1, 8.8.8.8"
-                }
-
-                // If endpoint is on known blocked Cloudflare prefixes (162.159.192.x / 162.159.193.x in RU)
-                val epClean = endpoint.trim().lowercase()
-                if (epClean.startsWith("162.159.192.") || epClean.startsWith("162.159.193.") || epClean.contains("engage.cloudflareclient.com")) {
-                    val port = epClean.substringAfterLast(":", "854").toIntOrNull() ?: 854
-                    endpoint = "188.114.97.1:$port"
                 }
             } else {
                 // For private AmneziaWG servers
@@ -232,10 +221,10 @@ object ConfigParser {
                 h2 = h2,
                 h3 = h3,
                 h4 = h4,
-                i1 = if (isCloudflareWarp) null else i1,
-                i2 = if (isCloudflareWarp) null else i2,
-                i3 = if (isCloudflareWarp) null else i3,
-                i4 = if (isCloudflareWarp) null else i4,
+                i1 = i1,
+                i2 = i2,
+                i3 = i3,
+                i4 = i4,
                 sni = sni,
                 peerPublicKey = peerPublicKey,
                 presharedKey = presharedKey,
