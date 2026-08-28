@@ -166,8 +166,14 @@ object ConfigParser {
                     defaultName.contains("WARP", ignoreCase = true)
 
             if (isCloudflareWarp) {
+                // Cloudflare WARP servers use standard WireGuard packet types (H1=1, H2=2, H3=3, H4=4)
+                // and strictly reject non-zero S1..S4 junk prefixes on the handshake initiation.
+                s1 = 0
+                s2 = 0
+                s3 = 0
+                s4 = 0
                 val warpH1 = AwgConfig.calculateWarpH1(reserved)
-                if (h1 == 0L) {
+                if (h1 == 0L || h1 == 1L) {
                     h1 = if (warpH1 != 1L) warpH1 else 1L
                 }
                 if (h2 == 0L) h2 = 2L
