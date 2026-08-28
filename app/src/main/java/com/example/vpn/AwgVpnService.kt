@@ -53,21 +53,18 @@ class AwgVpnService : VpnService() {
             ACTION_CONNECT -> {
                 val configRaw = intent.getStringExtra(EXTRA_CONFIG_RAW)
                 val configName = intent.getStringExtra(EXTRA_CONFIG_NAME) ?: "VPN Tunnel"
-                val configId = intent.getStringExtra(EXTRA_CONFIG_ID)
 
                 if (!configRaw.isNullOrBlank()) {
                     val parsed = ConfigParser.parse(configRaw, configName).getOrNull()
                     if (parsed != null) {
-                        startTunnel(parsed)
-                    } else {
-                        stopTunnel("Failed to parse configuration")
+                        App.instance.tunnelManager.connect(parsed)
                     }
-                } else {
-                    stopTunnel("Empty configuration provided")
                 }
             }
             ACTION_DISCONNECT -> {
-                stopTunnel(null)
+                App.instance.tunnelManager.disconnect()
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                stopSelf()
             }
         }
 
