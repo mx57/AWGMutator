@@ -79,6 +79,7 @@ data class AwgConfig(
         if (jc > 0) builder.appendLine("Jc = $jc")
         if (jmin > 0) builder.appendLine("Jmin = $jmin")
         if (jmax > 0) builder.appendLine("Jmax = $jmax")
+
         val effectiveS1 = if (s1 > 0) s1 else extractByteLengthFromHexPayload(i1)
         val effectiveS2 = if (s2 > 0) s2 else extractByteLengthFromHexPayload(i2)
 
@@ -87,20 +88,25 @@ data class AwgConfig(
         if (s3 > 0) builder.appendLine("S3 = $s3")
         if (s4 > 0) builder.appendLine("S4 = $s4")
 
+        val warpH1 = calculateWarpH1(reserved)
         val effectiveH1 = if ((isWarp || !reserved.isNullOrBlank()) && h1 <= 4L) {
-            calculateWarpH1(reserved)
+            val calc = calculateWarpH1(reserved)
+            if (calc != 1L) calc else h1
         } else {
             h1
         }
+        val effectiveH2 = h2
+        val effectiveH3 = h3
+        val effectiveH4 = h4
 
-        if (effectiveH1 > 0L && (effectiveH1 != 1L || jc > 0 || effectiveS1 > 0)) builder.appendLine("H1 = $effectiveH1")
-        if (h2 > 0L && (h2 != 2L || jc > 0 || effectiveS1 > 0)) builder.appendLine("H2 = $h2")
-        if (h3 > 0L && (h3 != 3L || jc > 0 || effectiveS1 > 0)) builder.appendLine("H3 = $h3")
-        if (h4 > 0L && (h4 != 4L || jc > 0 || effectiveS1 > 0)) builder.appendLine("H4 = $h4")
-        if (!i1.isNullOrBlank()) builder.appendLine("I1 = $i1")
-        if (!i2.isNullOrBlank()) builder.appendLine("I2 = $i2")
-        if (!i3.isNullOrBlank()) builder.appendLine("I3 = $i3")
-        if (!i4.isNullOrBlank()) builder.appendLine("I4 = $i4")
+        if (effectiveH1 > 0L) builder.appendLine("H1 = $effectiveH1")
+        if (effectiveH2 > 0L) builder.appendLine("H2 = $effectiveH2")
+        if (effectiveH3 > 0L) builder.appendLine("H3 = $effectiveH3")
+        if (effectiveH4 > 0L) builder.appendLine("H4 = $effectiveH4")
+        if (!i1.isNullOrBlank()) builder.appendLine("I1 = ${formatHexPayload(i1)}")
+        if (!i2.isNullOrBlank()) builder.appendLine("I2 = ${formatHexPayload(i2)}")
+        if (!i3.isNullOrBlank()) builder.appendLine("I3 = ${formatHexPayload(i3)}")
+        if (!i4.isNullOrBlank()) builder.appendLine("I4 = ${formatHexPayload(i4)}")
         if (!sni.isNullOrBlank()) builder.appendLine("SNI = $sni")
         if (!reserved.isNullOrBlank()) {
             val cleanReserved = com.example.data.remote.CloudflareApi.normalizeReserved(reserved)
@@ -215,6 +221,18 @@ data class AwgConfig(
             val (b0, b1, b2) = triple
             // Little-Endian WireGuard handshake initiation header uint32: [0x01 (Type=Initiation), b0, b1, b2]
             return 1L or (b0.toLong() shl 8) or (b1.toLong() shl 16) or (b2.toLong() shl 24)
+        }
+
+        fun formatHexPayload(v: String?): String {
+            if (v.isNullOrBlank()) return ""
+            val clean = v.trim()
+            if (clean.startsWith("<b ") || clean.startsWith("0x")) return clean
+            // If raw hex string, wrap in <b 0x...> format for AmneziaWG
+            return if (clean.all { it.isDigit() || it in 'a'..'f' || it in 'A'..'F' }) {
+                "<b 0x$clean>"
+            } else {
+                clean
+            }
         }
 
         fun extractByteLengthFromHexPayload(v: String?): Int {
