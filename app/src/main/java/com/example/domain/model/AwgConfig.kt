@@ -222,6 +222,18 @@ data class AwgConfig(
             return 1L or (b0.toLong() shl 8) or (b1.toLong() shl 16) or (b2.toLong() shl 24)
         }
 
+        fun formatHexPayload(v: String?): String {
+            if (v.isNullOrBlank()) return ""
+            val clean = v.trim()
+            if (clean.startsWith("<b ") || clean.startsWith("0x")) return clean
+            // If raw hex string, wrap in <b 0x...> format for AmneziaWG
+            return if (clean.all { it.isDigit() || it in 'a'..'f' || it in 'A'..'F' }) {
+                "<b 0x$clean>"
+            } else {
+                clean
+            }
+        }
+
         fun extractByteLengthFromHexPayload(v: String?): Int {
             if (v.isNullOrBlank()) return 0
             val clean = v.trim().removePrefix("<b ").removeSuffix(">").removePrefix("0x").trim()
