@@ -185,7 +185,7 @@ object ConfigParser {
                     jmin = 40
                     jmax = 70
                 }
-                mtu = 1280
+                if (mtu == 0) mtu = 1280
 
                 // Sanitize DNS: if DNS is empty, dead, or contains China Telecom / unroutable addresses (e.g. 111.88.96.50)
                 if (dns.isBlank() || dns.contains("111.88.") || dns.contains("0.0.0.0")) {
