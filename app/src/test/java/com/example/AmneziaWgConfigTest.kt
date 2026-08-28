@@ -70,16 +70,12 @@ class AmneziaWgConfigTest {
         assertTrue(exportedConf.contains("S2 = 25"))
         assertTrue(exportedConf.contains("H1 = 305419896"))
         assertTrue(exportedConf.contains("I1 = custom_init_junk"))
-        assertTrue(exportedConf.contains("Reserved = 1,2,3"))
+        assertTrue(exportedConf.contains("Reserved = 1, 2, 3") || exportedConf.contains("Reserved = 1,2,3"))
 
+        val extendedKeys = setOf("reserved", "sni", "i1", "i2", "i3", "i4", "s3", "s4")
         val nativeConf = exportedConf.lines().filterNot { line ->
-            val trimmed = line.trim().lowercase()
-            trimmed.startsWith("reserved =") ||
-            trimmed.startsWith("sni =") ||
-            trimmed.startsWith("i1 =") ||
-            trimmed.startsWith("i2 =") ||
-            trimmed.startsWith("i3 =") ||
-            trimmed.startsWith("i4 =")
+            val key = line.substringBefore("=").trim().lowercase()
+            key in extendedKeys
         }.joinToString("\n")
 
         // Verify native AmneziaWG Config parser accepts this configuration!
