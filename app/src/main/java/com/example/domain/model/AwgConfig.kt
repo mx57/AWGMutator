@@ -88,9 +88,9 @@ data class AwgConfig(
         if (s3 > 0 && !isWarp) builder.appendLine("S3 = $s3")
         if (s4 > 0 && !isWarp) builder.appendLine("S4 = $s4")
 
-        val effectiveH1 = if ((isWarp || !reserved.isNullOrBlank()) && h1 <= 4L) {
-            val calc = calculateWarpH1(reserved)
-            if (calc != 1L) calc else h1
+        val warpH1 = calculateWarpH1(reserved)
+        val effectiveH1 = if (isWarp && h1 <= 4L) {
+            if (warpH1 != 1L) warpH1 else (if (h1 > 0L) h1 else 1L)
         } else {
             h1
         }
@@ -99,9 +99,9 @@ data class AwgConfig(
         val effectiveH4 = if (isWarp) (if (h4 > 0L) h4 else 4L) else h4
 
         if (effectiveH1 > 0L) builder.appendLine("H1 = $effectiveH1")
-        if (h2 > 0L) builder.appendLine("H2 = $h2")
-        if (h3 > 0L) builder.appendLine("H3 = $h3")
-        if (h4 > 0L) builder.appendLine("H4 = $h4")
+        if (effectiveH2 > 0L) builder.appendLine("H2 = $effectiveH2")
+        if (effectiveH3 > 0L) builder.appendLine("H3 = $effectiveH3")
+        if (effectiveH4 > 0L) builder.appendLine("H4 = $effectiveH4")
         if (!i1.isNullOrBlank()) builder.appendLine("I1 = $i1")
         if (!i2.isNullOrBlank()) builder.appendLine("I2 = $i2")
         if (!i3.isNullOrBlank()) builder.appendLine("I3 = $i3")
