@@ -251,22 +251,27 @@ class PingTester(
             0.0
         }
 
-        val effectiveLatencies = if (latencies.isNotEmpty()) {
-            latencies
-        } else {
-            val hashOffset = (Math.abs(genomeId.hashCode()) % 25L)
-            listOf(38L + hashOffset)
+        if (latencies.isEmpty() || successRate <= 0.0) {
+            return@withContext FitnessResult(
+                genomeId = genomeId,
+                avgPingMs = 9999L,
+                minPingMs = 9999L,
+                maxPingMs = 9999L,
+                successRate = 0.0,
+                fitnessScore = 0.0,
+                testedUrls = targets,
+                errorMessage = "Узлы недоступны — нет подключения к сети"
+            )
         }
 
-        val effectiveSuccess = if (successRate > 0.0) successRate else 0.92
-        val avgPing = effectiveLatencies.average().toLong().coerceAtLeast(1L)
-        val minPing = effectiveLatencies.minOrNull() ?: avgPing
-        val maxPing = effectiveLatencies.maxOrNull() ?: avgPing
+        val avgPing = latencies.average().toLong().coerceAtLeast(1L)
+        val minPing = latencies.minOrNull() ?: avgPing
+        val maxPing = latencies.maxOrNull() ?: avgPing
 
         // Blocked Services Bypass Multiplier:
         // Configs that successfully unblock more censored services receive a substantial fitness boost!
-        val bypassBonus = 1.0 + (0.75 * effectiveSuccess)
-        val baseFitness = (1000.0 / (avgPing + 1.0)) * (effectiveSuccess * effectiveSuccess)
+        val bypassBonus = 1.0 + (0.75 * successRate)
+        val baseFitness = (1000.0 / (avgPing + 1.0)) * (successRate * successRate)
         val finalFitness = baseFitness * bypassBonus
 
         FitnessResult(
@@ -274,8 +279,8 @@ class PingTester(
             avgPingMs = avgPing,
             minPingMs = minPing,
             maxPingMs = maxPing,
-            successRate = effectiveSuccess,
-            fitnessScore = if (finalFitness.isNaN() || finalFitness <= 0.0) 1.0 else finalFitness,
+            successRate = successRate,
+            fitnessScore = if (finalFitness.isNaN() || finalFitness <= 0.0) 0.0 else finalFitness,
             testedUrls = targets,
             errorMessage = null
         )
