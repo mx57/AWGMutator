@@ -184,10 +184,10 @@ class AppTrafficTracker(
         if (existing != null) return existing
 
         val pm = context.packageManager
-        val pkgName = cached?.packageName ?: try {
-            pm.getPackagesForUid(uid)?.firstOrNull() ?: "uid.$uid"
+        val packages = try {
+            pm.getPackagesForUid(uid)
         } catch (_: Exception) {
-            "uid.$uid"
+            null
         }
 
         val pkgName = packages?.firstOrNull() ?: "uid.$uid"
