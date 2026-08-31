@@ -33,7 +33,8 @@ data class CachedAppMeta(
     val uid: Int,
     val packageName: String,
     val appName: String,
-    val isSystem: Boolean
+    val isSystem: Boolean,
+    val isLabelResolved: Boolean = false
 )
 
 /**
@@ -183,10 +184,10 @@ class AppTrafficTracker(
         if (existing != null) return existing
 
         val pm = context.packageManager
-        val packages = try {
-            pm.getPackagesForUid(uid)
+        val pkgName = cached?.packageName ?: try {
+            pm.getPackagesForUid(uid)?.firstOrNull() ?: "uid.$uid"
         } catch (_: Exception) {
-            null
+            "uid.$uid"
         }
 
         val pkgName = packages?.firstOrNull() ?: "uid.$uid"
