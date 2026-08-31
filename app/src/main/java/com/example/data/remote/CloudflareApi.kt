@@ -11,11 +11,16 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.suspendCancellableCoroutine
+import okhttp3.Call
+import okhttp3.Callback
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
 import org.json.JSONObject
+import java.io.IOException
 import java.net.InetAddress
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -23,6 +28,28 @@ import java.util.Locale
 import java.util.Random
 import java.util.TimeZone
 import java.util.concurrent.TimeUnit
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+
+/**
+ * Extension function to execute an OkHttp Call asynchronously using suspendCancellableCoroutine.
+ * Cancels the underlying OkHttp Call if the coroutine is cancelled.
+ */
+suspend fun Call.await(): Response = suspendCancellableCoroutine { continuation ->
+    continuation.invokeOnCancellation {
+        cancel()
+    }
+    enqueue(object : Callback {
+        override fun onResponse(call: Call, response: Response) {
+            continuation.resume(response)
+        }
+
+        override fun onFailure(call: Call, e: IOException) {
+            if (continuation.isCancelled) return
+            continuation.resumeWithException(e)
+        }
+    })
+}
 
 /**
  * Data class representing a Cloudflare API Mirror endpoint with optional Host header override.
@@ -95,7 +122,7 @@ open class CloudflareApi(
         }
     }
 
-    private fun probeMirror(mirror: CloudflareMirror): Long? {
+    private suspend fun probeMirror(mirror: CloudflareMirror): Long? {
         val start = System.nanoTime()
         return try {
             val reqBuilder = Request.Builder()
@@ -108,7 +135,7 @@ open class CloudflareApi(
                 reqBuilder.header("Host", mirror.hostHeader)
             }
 
-            client.newCall(reqBuilder.build()).execute().use { response ->
+            client.newCall(reqBuilder.build()).await().use { response ->
                 val elapsed = (System.nanoTime() - start) / 1_000_000
                 if (response.code in 200..499) elapsed else null
             }
@@ -158,7 +185,7 @@ open class CloudflareApi(
                         reqBuilder.addHeader("Host", mirror.hostHeader)
                     }
 
-                    val regResponse = client.newCall(reqBuilder.build()).execute()
+                    val regResponse = client.newCall(reqBuilder.build()).await()
                     val regCode = regResponse.code
                     val regBody = regResponse.body?.string().orEmpty()
                     regResponse.close()
@@ -199,7 +226,7 @@ open class CloudflareApi(
                         patchBuilder.addHeader("Host", mirror.hostHeader)
                     }
 
-                    val patchResponse = client.newCall(patchBuilder.build()).execute()
+                    val patchResponse = client.newCall(patchBuilder.build()).await()
                     val patchBody = patchResponse.body?.string().orEmpty()
                     patchResponse.close()
 
