@@ -1,10 +1,9 @@
 package com.example.util
 
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
-import java.io.BufferedReader
-import java.io.DataOutputStream
-import java.io.InputStreamReader
 
 data class RootCommandResult(
     val exitCode: Int,
@@ -34,47 +33,62 @@ object RootRunner {
 
     /**
      * Executes a batch of commands inside a single `su` shell session.
+     * Drains stdout and stderr asynchronously via coroutines to prevent OS process pipe deadlocks
+     * and minimize execution latency.
      */
-    suspend fun execute(vararg commands: String): RootCommandResult = withContext(Dispatchers.IO) {
-        var process: Process? = null
-        var os: DataOutputStream? = null
-        var reader: BufferedReader? = null
-        var errorReader: BufferedReader? = null
+    suspend fun execute(vararg commands: String): RootCommandResult =
+        executeShell("su", *commands)
 
-        try {
-            process = Runtime.getRuntime().exec("su")
-            os = DataOutputStream(process.outputStream)
-            reader = BufferedReader(InputStreamReader(process.inputStream))
-            errorReader = BufferedReader(InputStreamReader(process.errorStream))
+    /**
+     * Executes commands using a specified shell binary (`su`, `sh`, etc.).
+     */
+    suspend fun executeShell(shellCommand: String = "su", vararg commands: String): RootCommandResult = coroutineScope {
+        withContext(Dispatchers.IO) {
+            var process: Process? = null
+            try {
+                val proc = ProcessBuilder(shellCommand).start()
+                process = proc
 
-            for (cmd in commands) {
-                os.writeBytes("$cmd\n")
-                os.flush()
+                // Drain stdout and stderr concurrently to prevent process buffer deadlocks
+                val stdoutDeferred = async(Dispatchers.IO) {
+                    proc.inputStream.bufferedReader().use { it.readText() }
+                }
+                val stderrDeferred = async(Dispatchers.IO) {
+                    proc.errorStream.bufferedReader().use { it.readText() }
+                }
+
+                // Write commands to stdin
+                proc.outputStream.bufferedWriter().use { writer ->
+                    for (cmd in commands) {
+                        writer.write(cmd)
+                        writer.newLine()
+                    }
+                    writer.write("exit")
+                    writer.newLine()
+                    writer.flush()
+                }
+
+                val exitCode = proc.waitFor()
+                val stdout = stdoutDeferred.await().trim()
+                val stderr = stderrDeferred.await().trim()
+
+                RootCommandResult(
+                    exitCode = exitCode,
+                    stdout = stdout,
+                    stderr = stderr
+                )
+            } catch (e: Exception) {
+                RootCommandResult(
+                    exitCode = -1,
+                    stdout = "",
+                    stderr = e.localizedMessage ?: "Failed to execute root shell"
+                )
+            } finally {
+                try {
+                    process?.destroy()
+                } catch (_: Exception) {
+                }
             }
-
-            os.writeBytes("exit\n")
-            os.flush()
-
-            val exitCode = process.waitFor()
-            val stdout = reader.readText().trim()
-            val stderr = errorReader.readText().trim()
-
-            RootCommandResult(
-                exitCode = exitCode,
-                stdout = stdout,
-                stderr = stderr
-            )
-        } catch (e: Exception) {
-            RootCommandResult(
-                exitCode = -1,
-                stdout = "",
-                stderr = e.localizedMessage ?: "Failed to execute root shell"
-            )
-        } finally {
-            try { os?.close() } catch (_: Exception) {}
-            try { reader?.close() } catch (_: Exception) {}
-            try { errorReader?.close() } catch (_: Exception) {}
-            try { process?.destroy() } catch (_: Exception) {}
         }
     }
 
