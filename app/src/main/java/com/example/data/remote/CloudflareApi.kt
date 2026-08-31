@@ -64,7 +64,7 @@ data class CloudflareMirror(
  * Robust Client for interacting with Cloudflare WARP client API with dynamic mirror speed probing,
  * custom anti-censorship DNS resolver, and DNS server integration.
  */
-class CloudflareApi(
+open class CloudflareApi(
     private val client: OkHttpClient = OkHttpClient.Builder()
         .dns(object : okhttp3.Dns {
             override fun lookup(hostname: String): List<InetAddress> {
@@ -149,7 +149,7 @@ class CloudflareApi(
      * binds license if provided, and configures optimal DNS servers.
      * If all mirrors fail due to censorship, synthesizes a 100% valid AmneziaWG/WARP configuration with working bypass endpoints.
      */
-    suspend fun generateWarpConfig(
+    open suspend fun generateWarpConfig(
         licenseKey: String? = null,
         dnsOverride: String? = null
     ): Result<WarpConfig> = withContext(Dispatchers.IO) {

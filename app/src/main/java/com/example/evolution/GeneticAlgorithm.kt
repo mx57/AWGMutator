@@ -90,42 +90,14 @@ class GeneticAlgorithm(
             settings = settings
         )
 
-        // Convert all provided configs to seed genomes
-        val seedGenomes = seedConfigs.map { cfg ->
-            Genome(
-                jc = cfg.jc,
-                jmin = cfg.jmin,
-                jmax = cfg.jmax,
-                s1 = cfg.s1,
-                s2 = cfg.s2,
-                s3 = cfg.s3,
-                s4 = cfg.s4,
-                h1 = cfg.h1,
-                h2 = cfg.h2,
-                h3 = cfg.h3,
-                h4 = cfg.h4,
-                i1 = cfg.i1,
-                sni = cfg.sni,
-                endpoint = cfg.endpoint,
-                mtu = cfg.mtu
-            ).validated()
-        }.ifEmpty {
-            listOf(Genome().validated())
-        }
-
+        val seedGenomes = createSeedGenomes(seedConfigs)
         val primarySeed = seedGenomes.first()
         val baseConfig = seedConfigs.firstOrNull() ?: AwgConfig(
             name = "Base Seed",
             privateKey = "a".repeat(43) + "="
         )
 
-        // Create population from the diverse multi-config seed pool
-        var population = mutableListOf<Genome>()
-        for (i in 0 until effectivePopSize) {
-            val seed = seedGenomes[i % seedGenomes.size]
-            val mutatedSeed = if (i < seedGenomes.size) seed else mutationStrategy.mutate(seed)
-            population.add(mutatedSeed)
-        }
+        var population = createInitialPopulation(seedGenomes, effectivePopSize, mutationStrategy)
 
         var overallBest: Genome? = null
         val history = mutableListOf<Pair<Int, Double>>()
@@ -147,66 +119,15 @@ class GeneticAlgorithm(
             for (generation in 1..effectiveGens) {
                 if (isCancelled) break
 
-                val evaluatedPopulation = mutableListOf<Genome>()
-
-                for ((idx, candidateGenome) in population.withIndex()) {
-                    if (isCancelled) break
-
-                    val candidateIndex = idx + 1
-                    val logEntry = "Gen $generation | Specimen #$candidateIndex (Jc=${candidateGenome.jc}, S1=${candidateGenome.s1}, MTU=${candidateGenome.mtu})..."
-                    logs.add(0, logEntry)
-
-                    _progress.value = _progress.value.copy(
-                        phase = EvolutionPhase.EVALUATING,
-                        currentGeneration = generation,
-                        currentGenomeIndex = candidateIndex,
-                        logs = logs.take(60)
-                    )
-
-                    // Evaluate fitness
-                    val rawFitnessResult = evaluator.evaluate(candidateGenome, baseConfig, targetUrls)
-
-                    val validatedFitness = sanitizeFitness(rawFitnessResult.fitnessScore)
-                    val validatedPing = if (rawFitnessResult.avgPingMs in 1..10000L) rawFitnessResult.avgPingMs else 50L
-                    val validatedSuccess = rawFitnessResult.successRate.coerceIn(0.0, 1.0)
-
-                    probesHistory.add(Pair(validatedPing, validatedSuccess))
-
-                    val evaluatedGenome = candidateGenome.copy(
-                        fitness = validatedFitness,
-                        avgPingMs = validatedPing,
-                        successRate = validatedSuccess,
-                        generation = generation
-                    ).validated()
-
-                    evaluatedPopulation.add(evaluatedGenome)
-
-                    _progress.value = _progress.value.copy(
-                        latestLatencyMs = validatedPing,
-                        latestSuccessRate = validatedSuccess,
-                        recentProbes = probesHistory.takeLast(24)
-                    )
-
-                    evolutionRepository.recordLog(
-                        EvolutionLogEntity(
-                            sessionId = sessionId,
-                            generation = generation,
-                            genomeIndex = candidateIndex,
-                            avgPingMs = validatedPing,
-                            successRate = validatedSuccess,
-                            fitness = validatedFitness,
-                            jc = evaluatedGenome.jc,
-                            s1 = evaluatedGenome.s1,
-                            s2 = evaluatedGenome.s2,
-                            s3 = evaluatedGenome.s3,
-                            s4 = evaluatedGenome.s4,
-                            h1 = evaluatedGenome.h1,
-                            h2 = evaluatedGenome.h2,
-                            h3 = evaluatedGenome.h3,
-                            h4 = evaluatedGenome.h4
-                        )
-                    )
-                }
+                val evaluatedPopulation = evaluateGenerationCandidates(
+                    generation = generation,
+                    population = population,
+                    baseConfig = baseConfig,
+                    targetUrls = targetUrls,
+                    sessionId = sessionId,
+                    logs = logs,
+                    probesHistory = probesHistory
+                )
 
                 if (isCancelled) break
 
@@ -267,36 +188,15 @@ class GeneticAlgorithm(
 
                 _progress.value = _progress.value.copy(phase = EvolutionPhase.BREEDING)
 
-                val nextGen = mutableListOf<Genome>()
-
-                // 1. Elitism: Top 2 preserved
-                nextGen.add(sorted[0].copy(generation = generation + 1).validated())
-                if (sorted.size > 1) {
-                    nextGen.add(sorted[1].copy(generation = generation + 1).validated())
-                }
-
-                // 2. Island model integration
-                if (islandImmigrants != null) {
-                    for (immigrant in islandImmigrants) {
-                        if (nextGen.size < effectivePopSize) {
-                            nextGen.add(immigrant)
-                        }
-                    }
-                }
-
-                // 3. Selection, Crossover & Mutation
-                while (nextGen.size < effectivePopSize) {
-                    val parentA = populationManager.selectParent(sorted)
-                    val parentB = populationManager.selectParent(sorted)
-
-                    val (childA, childB) = crossoverStrategy.crossover(parentA, parentB, generation + 1)
-                    nextGen.add(mutationStrategy.mutate(childA))
-                    if (nextGen.size < effectivePopSize) {
-                        nextGen.add(mutationStrategy.mutate(childB))
-                    }
-                }
-
-                population = nextGen
+                population = breedNextGeneration(
+                    sorted = sorted,
+                    generation = generation,
+                    effectivePopSize = effectivePopSize,
+                    islandImmigrants = islandImmigrants,
+                    populationManager = populationManager,
+                    crossoverStrategy = crossoverStrategy,
+                    mutationStrategy = mutationStrategy
+                )
             }
         } catch (e: Exception) {
             if (e !is CancellationException) {
@@ -311,6 +211,158 @@ class GeneticAlgorithm(
         }
 
         return overallBest
+    }
+
+    private fun createSeedGenomes(seedConfigs: List<AwgConfig>): List<Genome> {
+        return seedConfigs.map { cfg ->
+            Genome(
+                jc = cfg.jc,
+                jmin = cfg.jmin,
+                jmax = cfg.jmax,
+                s1 = cfg.s1,
+                s2 = cfg.s2,
+                s3 = cfg.s3,
+                s4 = cfg.s4,
+                h1 = cfg.h1,
+                h2 = cfg.h2,
+                h3 = cfg.h3,
+                h4 = cfg.h4,
+                i1 = cfg.i1,
+                sni = cfg.sni,
+                endpoint = cfg.endpoint,
+                mtu = cfg.mtu
+            ).validated()
+        }.ifEmpty {
+            listOf(Genome().validated())
+        }
+    }
+
+    private fun createInitialPopulation(
+        seedGenomes: List<Genome>,
+        effectivePopSize: Int,
+        mutationStrategy: MutationStrategy
+    ): MutableList<Genome> {
+        val population = mutableListOf<Genome>()
+        for (i in 0 until effectivePopSize) {
+            val seed = seedGenomes[i % seedGenomes.size]
+            val mutatedSeed = if (i < seedGenomes.size) seed else mutationStrategy.mutate(seed)
+            population.add(mutatedSeed)
+        }
+        return population
+    }
+
+    private suspend fun evaluateGenerationCandidates(
+        generation: Int,
+        population: List<Genome>,
+        baseConfig: AwgConfig,
+        targetUrls: List<String>,
+        sessionId: String,
+        logs: MutableList<String>,
+        probesHistory: MutableList<Pair<Long, Double>>
+    ): MutableList<Genome> {
+        val evaluatedPopulation = mutableListOf<Genome>()
+
+        for ((idx, candidateGenome) in population.withIndex()) {
+            if (isCancelled) break
+
+            val candidateIndex = idx + 1
+            val logEntry = "Gen $generation | Specimen #$candidateIndex (Jc=${candidateGenome.jc}, S1=${candidateGenome.s1}, MTU=${candidateGenome.mtu})..."
+            logs.add(0, logEntry)
+
+            _progress.value = _progress.value.copy(
+                phase = EvolutionPhase.EVALUATING,
+                currentGeneration = generation,
+                currentGenomeIndex = candidateIndex,
+                logs = logs.take(60)
+            )
+
+            // Evaluate fitness
+            val rawFitnessResult = evaluator.evaluate(candidateGenome, baseConfig, targetUrls)
+
+            val validatedFitness = sanitizeFitness(rawFitnessResult.fitnessScore)
+            val validatedPing = if (rawFitnessResult.avgPingMs in 1..10000L) rawFitnessResult.avgPingMs else 50L
+            val validatedSuccess = rawFitnessResult.successRate.coerceIn(0.0, 1.0)
+
+            probesHistory.add(Pair(validatedPing, validatedSuccess))
+
+            val evaluatedGenome = candidateGenome.copy(
+                fitness = validatedFitness,
+                avgPingMs = validatedPing,
+                successRate = validatedSuccess,
+                generation = generation
+            ).validated()
+
+            evaluatedPopulation.add(evaluatedGenome)
+
+            _progress.value = _progress.value.copy(
+                latestLatencyMs = validatedPing,
+                latestSuccessRate = validatedSuccess,
+                recentProbes = probesHistory.takeLast(24)
+            )
+
+            evolutionRepository.recordLog(
+                EvolutionLogEntity(
+                    sessionId = sessionId,
+                    generation = generation,
+                    genomeIndex = candidateIndex,
+                    avgPingMs = validatedPing,
+                    successRate = validatedSuccess,
+                    fitness = validatedFitness,
+                    jc = evaluatedGenome.jc,
+                    s1 = evaluatedGenome.s1,
+                    s2 = evaluatedGenome.s2,
+                    s3 = evaluatedGenome.s3,
+                    s4 = evaluatedGenome.s4,
+                    h1 = evaluatedGenome.h1,
+                    h2 = evaluatedGenome.h2,
+                    h3 = evaluatedGenome.h3,
+                    h4 = evaluatedGenome.h4
+                )
+            )
+        }
+
+        return evaluatedPopulation
+    }
+
+    private fun breedNextGeneration(
+        sorted: List<Genome>,
+        generation: Int,
+        effectivePopSize: Int,
+        islandImmigrants: List<Genome>?,
+        populationManager: Population,
+        crossoverStrategy: CrossoverStrategy,
+        mutationStrategy: MutationStrategy
+    ): MutableList<Genome> {
+        val nextGen = mutableListOf<Genome>()
+
+        // 1. Elitism: Top 2 preserved
+        nextGen.add(sorted[0].copy(generation = generation + 1).validated())
+        if (sorted.size > 1) {
+            nextGen.add(sorted[1].copy(generation = generation + 1).validated())
+        }
+
+        // 2. Island model integration
+        if (islandImmigrants != null) {
+            for (immigrant in islandImmigrants) {
+                if (nextGen.size < effectivePopSize) {
+                    nextGen.add(immigrant)
+                }
+            }
+        }
+
+        // 3. Selection, Crossover & Mutation
+        while (nextGen.size < effectivePopSize) {
+            val parentA = populationManager.selectParent(sorted)
+            val parentB = populationManager.selectParent(sorted)
+
+            val (childA, childB) = crossoverStrategy.crossover(parentA, parentB, generation + 1)
+            nextGen.add(mutationStrategy.mutate(childA))
+            if (nextGen.size < effectivePopSize) {
+                nextGen.add(mutationStrategy.mutate(childB))
+            }
+        }
+
+        return nextGen
     }
 
     private fun sanitizeFitness(score: Double): Double {

@@ -21,7 +21,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.testTag
+import androidx.navigation.NavController
 import androidx.navigation.NavGraph.Companion.findStartDestination
+import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
 import androidx.navigation.compose.currentBackStackEntryAsState
@@ -59,93 +61,91 @@ fun AppNavigation() {
     Scaffold(
         snackbarHost = { SnackbarHost(snackbarHostState) },
         bottomBar = {
-            NavigationBar {
-                screens.forEach { screen ->
-                    val selected = currentRoute == screen.route
-                    NavigationBarItem(
-                        selected = selected,
-                        onClick = {
-                            if (currentRoute != screen.route) {
-                                navController.navigate(screen.route) {
-                                    popUpTo(navController.graph.findStartDestination().id) {
-                                        saveState = true
-                                    }
-                                    launchSingleTop = true
-                                    restoreState = true
-                                }
-                            }
-                        },
-                        icon = { Icon(screen.icon, contentDescription = screen.title) },
-                        label = { Text(screen.title) },
-                        colors = NavigationBarItemDefaults.colors(
-                            selectedIconColor = CyberCyan,
-                            selectedTextColor = CyberCyan,
-                            indicatorColor = CyberCyan.copy(alpha = 0.15f)
-                        ),
-                        modifier = Modifier.testTag("nav_tab_${screen.route}")
-                    )
+            AppBottomBar(
+                screens = screens,
+                currentRoute = currentRoute,
+                onNavigateToScreen = { screen ->
+                    if (currentRoute != screen.route) {
+                        navController.navigateToTopLevelDestination(screen.route)
+                    }
                 }
-            }
+            )
         }
     ) { paddingValues ->
-        NavHost(
+        AppNavHost(
             navController = navController,
-            startDestination = Screen.Dashboard.route,
+            snackbarHostState = snackbarHostState,
             modifier = Modifier.padding(paddingValues)
-        ) {
-            composable(Screen.Dashboard.route) {
-                DashboardScreen(
-                    onNavigateToEvolution = {
-                        navController.navigate(Screen.Evolution.route) {
-                            popUpTo(navController.graph.findStartDestination().id) {
-                                saveState = true
-                            }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    },
-                    onNavigateToConfigs = {
-                        navController.navigate(Screen.Configs.route) {
-                            popUpTo(navController.graph.findStartDestination().id) {
-                                saveState = true
-                            }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    },
-                    onNavigateToAntiDpi = {
-                        navController.navigate(Screen.AntiDpi.route) {
-                            popUpTo(navController.graph.findStartDestination().id) {
-                                saveState = true
-                            }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    },
-                    onNavigateToSettings = {
-                        navController.navigate(Screen.Settings.route) {
-                            popUpTo(navController.graph.findStartDestination().id) {
-                                saveState = true
-                            }
-                            launchSingleTop = true
-                            restoreState = true
-                        }
-                    },
-                    snackbarHostState = snackbarHostState
-                )
-            }
-            composable(Screen.Configs.route) {
-                ConfigsScreen(snackbarHostState = snackbarHostState)
-            }
-            composable(Screen.AntiDpi.route) {
-                AntiDpiScreen(snackbarHostState = snackbarHostState)
-            }
-            composable(Screen.Evolution.route) {
-                EvolutionScreen(snackbarHostState = snackbarHostState)
-            }
-            composable(Screen.Settings.route) {
-                SettingsScreen(snackbarHostState = snackbarHostState)
-            }
+        )
+    }
+}
+
+@Composable
+private fun AppBottomBar(
+    screens: List<Screen>,
+    currentRoute: String?,
+    onNavigateToScreen: (Screen) -> Unit
+) {
+    NavigationBar {
+        screens.forEach { screen ->
+            val selected = currentRoute == screen.route
+            NavigationBarItem(
+                selected = selected,
+                onClick = { onNavigateToScreen(screen) },
+                icon = { Icon(screen.icon, contentDescription = screen.title) },
+                label = { Text(screen.title) },
+                colors = NavigationBarItemDefaults.colors(
+                    selectedIconColor = CyberCyan,
+                    selectedTextColor = CyberCyan,
+                    indicatorColor = CyberCyan.copy(alpha = 0.15f)
+                ),
+                modifier = Modifier.testTag("nav_tab_${screen.route}")
+            )
         }
+    }
+}
+
+@Composable
+private fun AppNavHost(
+    navController: NavHostController,
+    snackbarHostState: SnackbarHostState,
+    modifier: Modifier = Modifier
+) {
+    NavHost(
+        navController = navController,
+        startDestination = Screen.Dashboard.route,
+        modifier = modifier
+    ) {
+        composable(Screen.Dashboard.route) {
+            DashboardScreen(
+                onNavigateToEvolution = { navController.navigateToTopLevelDestination(Screen.Evolution.route) },
+                onNavigateToConfigs = { navController.navigateToTopLevelDestination(Screen.Configs.route) },
+                onNavigateToAntiDpi = { navController.navigateToTopLevelDestination(Screen.AntiDpi.route) },
+                onNavigateToSettings = { navController.navigateToTopLevelDestination(Screen.Settings.route) },
+                snackbarHostState = snackbarHostState
+            )
+        }
+        composable(Screen.Configs.route) {
+            ConfigsScreen(snackbarHostState = snackbarHostState)
+        }
+        composable(Screen.AntiDpi.route) {
+            AntiDpiScreen(snackbarHostState = snackbarHostState)
+        }
+        composable(Screen.Evolution.route) {
+            EvolutionScreen(snackbarHostState = snackbarHostState)
+        }
+        composable(Screen.Settings.route) {
+            SettingsScreen(snackbarHostState = snackbarHostState)
+        }
+    }
+}
+
+private fun NavController.navigateToTopLevelDestination(route: String) {
+    navigate(route) {
+        popUpTo(graph.findStartDestination().id) {
+            saveState = true
+        }
+        launchSingleTop = true
+        restoreState = true
     }
 }
