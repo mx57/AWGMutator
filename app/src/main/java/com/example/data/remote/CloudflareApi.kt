@@ -133,7 +133,7 @@ class CloudflareApi(
                 try {
                     val keyPair = WireGuardKeyGen.generateKeyPair()
                     val installId = generateRandomString(22)
-                    val fcmToken = "$installId:APA91b${generateRandomString(134)}"
+                    val fcmToken = "$installId:${generateRandomString(140)}"
                     val isoTimestamp = getIsoTimestamp()
 
                     val regBodyJson = JSONObject().apply {
