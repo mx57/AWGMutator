@@ -164,17 +164,14 @@ class AppTrafficTracker(
                 val pkg = appInfo.packageName ?: continue
                 if (pkg == context.packageName) continue
 
-                val existing = appMetaCache[appInfo.uid]
-                if (existing != null && existing.isLabelResolved) continue
-
                 val isSystem = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
+                val existing = appMetaCache[appInfo.uid]
 
                 appMetaCache[appInfo.uid] = CachedAppMeta(
                     uid = appInfo.uid,
                     packageName = pkg,
-                    appName = existing?.appName ?: formatAppName(pkg),
-                    isSystem = isSystem,
-                    isLabelResolved = existing?.isLabelResolved ?: false
+                    appName = existing?.appName ?: "",
+                    isSystem = isSystem
                 )
             }
         } catch (_: Exception) {
@@ -183,10 +180,8 @@ class AppTrafficTracker(
     }
 
     private fun resolveAppMeta(uid: Int): CachedAppMeta {
-        val cached = appMetaCache[uid]
-        if (cached != null && cached.isLabelResolved) {
-            return cached
-        }
+        val existing = appMetaCache[uid]
+        if (existing != null) return existing
 
         val pm = context.packageManager
         val pkgName = cached?.packageName ?: try {
@@ -195,24 +190,44 @@ class AppTrafficTracker(
             "uid.$uid"
         }
 
-        val (appName, isSystem) = try {
+        val pkgName = packages?.firstOrNull() ?: "uid.$uid"
+        val isSystem = try {
             val appInfo = pm.getApplicationInfo(pkgName, 0)
-            val label = pm.getApplicationLabel(appInfo).toString()
-            val system = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
-            Pair(if (label.isNotBlank()) label else formatAppName(pkgName), system)
+            (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
         } catch (_: Exception) {
-            Pair(cached?.appName ?: formatAppName(pkgName), cached?.isSystem ?: false)
+            false
         }
 
         val meta = CachedAppMeta(
             uid = uid,
             packageName = pkgName,
-            appName = appName,
-            isSystem = isSystem,
-            isLabelResolved = true
+            appName = "",
+            isSystem = isSystem
         )
         appMetaCache[uid] = meta
         return meta
+    }
+
+    private fun ensureAppNameResolved(meta: CachedAppMeta): CachedAppMeta {
+        if (meta.appName.isNotBlank()) return meta
+
+        val resolvedName = fetchAppName(meta.packageName)
+        val updated = meta.copy(
+            appName = if (resolvedName.isNotBlank()) resolvedName else formatAppName(meta.packageName)
+        )
+        appMetaCache[meta.uid] = updated
+        return updated
+    }
+
+    private fun fetchAppName(packageName: String): String {
+        return try {
+            val pm = context.packageManager
+            val appInfo = pm.getApplicationInfo(packageName, 0)
+            val label = pm.getApplicationLabel(appInfo).toString()
+            if (label.isNotBlank()) label else formatAppName(packageName)
+        } catch (_: Exception) {
+            formatAppName(packageName)
+        }
     }
 
     private fun formatAppName(packageName: String): String {
@@ -405,10 +420,11 @@ class AppTrafficTracker(
 
             // STRICT FILTER: Only include apps that actually generated traffic through the tunnel (> 0 KB / >= 1024 Bytes) or have active speed
             if (totalBytes >= 1024L || totalSpeed > 0L) {
+                val resolvedMeta = ensureAppNameResolved(appMeta)
                 list.add(
                     AppTrafficStat(
-                        packageName = appMeta.packageName,
-                        appName = appMeta.appName,
+                        packageName = resolvedMeta.packageName,
+                        appName = resolvedMeta.appName,
                         uid = uid,
                         rxBytes = sessionRx,
                         txBytes = sessionTx,
@@ -416,7 +432,7 @@ class AppTrafficTracker(
                         rxSpeedBytesPerSec = rxSpeed,
                         txSpeedBytesPerSec = txSpeed,
                         connectionStatus = status,
-                        isSystemApp = appMeta.isSystem,
+                        isSystemApp = resolvedMeta.isSystem,
                         lastActiveTime = currentTime
                     )
                 )
