@@ -27,9 +27,22 @@ object ConfigParser {
     }
 
     /**
+     * Sanitizes configuration names to remove newline injection, control characters,
+     * and excessive length that could lead to log injection or formatting issues.
+     */
+    fun sanitizeConfigName(name: String?, fallback: String = "Imported AWG"): String {
+        if (name.isNullOrBlank()) return fallback
+        // Remove all ASCII/Unicode control characters (including \r, \n, \t, \0)
+        val sanitized = name.replace(Regex("[\\p{C}\\r\\n\\t]"), "").trim()
+        val truncated = if (sanitized.length > 100) sanitized.take(100).trim() else sanitized
+        return truncated.ifBlank { fallback }
+    }
+
+    /**
      * Parses raw text configuration into an [AwgConfig] domain model.
      */
     fun parse(rawContent: String, defaultName: String = "Imported AWG"): Result<AwgConfig> {
+        val safeName = sanitizeConfigName(defaultName, "Imported AWG")
         return runCatching {
             var privateKey = ""
             var address = "172.16.0.2/32"
@@ -205,7 +218,7 @@ object ConfigParser {
 
             AwgConfig(
                 id = UUID.randomUUID().toString(),
-                name = defaultName,
+                name = safeName,
                 privateKey = privateKey,
                 address = address,
                 dns = dns,

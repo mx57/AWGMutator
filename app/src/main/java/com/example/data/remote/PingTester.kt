@@ -184,12 +184,12 @@ class PingTester(
             process.waitFor(1800, TimeUnit.MILLISECONDS)
 
             // Look for time=XX.X ms
-            val timeMatch = Regex("time=([0-9.]+)\\s*ms").find(output)
+            val timeMatch = TIME_REGEX.find(output)
             if (timeMatch != null) {
                 val ms = timeMatch.groupValues[1].toDoubleOrNull()
                 if (ms != null && ms > 0) ms.toLong().coerceAtLeast(1L) else null
             } else {
-                val rttMatch = Regex("rtt min/avg/max/mdev = [0-9.]+/([0-9.]+)/").find(output)
+                val rttMatch = RTT_REGEX.find(output)
                 val ms = rttMatch?.groupValues?.getOrNull(1)?.toDoubleOrNull()
                 if (ms != null && ms > 0) ms.toLong().coerceAtLeast(1L) else null
             }
@@ -390,5 +390,10 @@ class PingTester(
         } catch (_: Exception) {
             null
         }
+    }
+
+    companion object {
+        private val TIME_REGEX = Regex("time=([0-9.]+)\\s*ms")
+        private val RTT_REGEX = Regex("rtt min/avg/max/mdev = [0-9.]+/([0-9.]+)/")
     }
 }

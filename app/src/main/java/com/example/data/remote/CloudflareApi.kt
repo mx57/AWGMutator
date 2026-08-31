@@ -278,8 +278,8 @@ class CloudflareApi(
     }
 
     private fun generateRandomString(length: Int): String {
-        val chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-        val random = Random()
+        val chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"
+        val random = java.security.SecureRandom()
         return (1..length).map { chars[random.nextInt(chars.length)] }.joinToString("")
     }
 
