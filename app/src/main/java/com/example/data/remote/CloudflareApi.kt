@@ -133,7 +133,7 @@ class CloudflareApi(
                 try {
                     val keyPair = WireGuardKeyGen.generateKeyPair()
                     val installId = generateRandomString(22)
-                    val fcmToken = "$installId:APA91b${generateRandomString(134)}"
+                    val fcmToken = "$installId:${generateRandomString(140)}"
                     val isoTimestamp = getIsoTimestamp()
 
                     val regBodyJson = JSONObject().apply {
@@ -278,8 +278,8 @@ class CloudflareApi(
     }
 
     private fun generateRandomString(length: Int): String {
-        val chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
-        val random = Random()
+        val chars = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-"
+        val random = java.security.SecureRandom()
         return (1..length).map { chars[random.nextInt(chars.length)] }.joinToString("")
     }
 
