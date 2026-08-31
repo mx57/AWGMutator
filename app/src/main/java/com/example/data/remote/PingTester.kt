@@ -127,9 +127,7 @@ class PingTester(
      * Returns true latency (e.g. 28ms, 65ms) or unreachable (null).
      */
     suspend fun testEndpoint(endpoint: String): EndpointProbeResult = withContext(Dispatchers.IO) {
-        val parts = endpoint.trim().split(":")
-        val host = parts[0].trim().removePrefix("[").removeSuffix("]")
-        val port = if (parts.size > 1) parts[1].toIntOrNull() ?: 854 else 854
+        val (host, port) = parseEndpointHostAndPort(endpoint)
 
         // 1. Try real system ICMP ping first
         val icmpPing = measureSystemPing(host)
@@ -176,8 +174,11 @@ class PingTester(
     }
 
     private fun measureSystemPing(host: String): Long? {
+        if (!isValidHost(host)) {
+            return null
+        }
         return try {
-            val process = ProcessBuilder("/system/bin/ping", "-c", "1", "-w", "2", host)
+            val process = ProcessBuilder("/system/bin/ping", "-c", "1", "-w", "2", "--", host)
                 .redirectErrorStream(true)
                 .start()
             val output = process.inputStream.bufferedReader().readText()
@@ -195,6 +196,76 @@ class PingTester(
             }
         } catch (_: Exception) {
             null
+        }
+    }
+
+    internal fun parseEndpointHostAndPort(endpoint: String): Pair<String, Int> {
+        val trimmed = endpoint.trim()
+        if (trimmed.isEmpty()) return Pair("", 854)
+
+        if (trimmed.startsWith("[")) {
+            val bracketEnd = trimmed.indexOf(']')
+            if (bracketEnd != -1) {
+                val host = trimmed.substring(1, bracketEnd).trim()
+                val remaining = trimmed.substring(bracketEnd + 1).trim()
+                val port = if (remaining.startsWith(":")) {
+                    remaining.substring(1).toIntOrNull() ?: 854
+                } else {
+                    854
+                }
+                return Pair(host, port)
+            }
+        }
+
+        val lastColon = trimmed.lastIndexOf(':')
+        if (lastColon != -1 && trimmed.indexOf(':') == lastColon) {
+            val host = trimmed.substring(0, lastColon).trim()
+            val port = trimmed.substring(lastColon + 1).toIntOrNull() ?: 854
+            return Pair(host, port)
+        }
+
+        val parts = trimmed.split(":")
+        if (parts.size > 2) {
+            // IPv6 address without brackets
+            return Pair(trimmed, 854)
+        }
+
+        val host = parts[0].trim().removePrefix("[").removeSuffix("]")
+        val port = if (parts.size > 1) parts[1].toIntOrNull() ?: 854 else 854
+        return Pair(host, port)
+    }
+
+    internal fun isValidHost(host: String): Boolean {
+        if (host.isBlank() || host.length > 253 || host.startsWith("-")) {
+            return false
+        }
+        return isValidIpv4(host) || isValidIpv6(host) || isValidHostname(host)
+    }
+
+    private fun isValidIpv4(host: String): Boolean {
+        val parts = host.split('.')
+        if (parts.size != 4) return false
+        return parts.all { part ->
+            part.isNotEmpty() && part.length <= 3 && part.all { it.isDigit() } && part.toIntOrNull() in 0..255
+        }
+    }
+
+    private fun isValidIpv6(host: String): Boolean {
+        if (!host.contains(':')) return false
+        if (host.count { it == ':' } > 7) return false
+        if (host.contains(":::")) return false
+        val firstDoubleColon = host.indexOf("::")
+        if (firstDoubleColon != -1 && host.indexOf("::", firstDoubleColon + 1) != -1) return false
+        return host.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' || it == ':' || it == '.' }
+    }
+
+    private fun isValidHostname(host: String): Boolean {
+        val labels = host.split('.')
+        if (labels.any { it.isEmpty() || it.length > 63 }) return false
+        return labels.all { label ->
+            label.first().isLetterOrDigit() &&
+            label.last().isLetterOrDigit() &&
+            label.all { it.isLetterOrDigit() || it == '-' }
         }
     }
 
