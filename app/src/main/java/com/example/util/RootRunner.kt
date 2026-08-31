@@ -20,6 +20,15 @@ data class RootCommandResult(
 object RootRunner {
 
     /**
+     * Safely escapes a command-line argument for POSIX shell execution by single-quoting it
+     * and escaping any single-quote characters contained inside.
+     */
+    fun escapeArg(arg: String): String {
+        val sanitized = arg.replace("\u0000", "")
+        return "'" + sanitized.replace("'", "'\\''") + "'"
+    }
+
+    /**
      * Checks if device has accessible SuperUser (su) binary and grants root permissions.
      */
     suspend fun isRootAvailable(): Boolean = withContext(Dispatchers.IO) {
@@ -57,10 +66,11 @@ object RootRunner {
                     proc.errorStream.bufferedReader().use { it.readText() }
                 }
 
-                // Write commands to stdin
+                // Write commands to stdin after stripping dangerous control characters/newlines
                 proc.outputStream.bufferedWriter().use { writer ->
                     for (cmd in commands) {
-                        writer.write(cmd)
+                        val sanitizedCmd = cmd.replace("\u0000", "").replace("\r", "").replace("\n", " ")
+                        writer.write(sanitizedCmd)
                         writer.newLine()
                     }
                     writer.write("exit")
