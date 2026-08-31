@@ -1,8 +1,6 @@
 package com.example
 
 import android.content.ComponentCallbacks2
-import android.content.Intent
-import android.net.VpnService
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
