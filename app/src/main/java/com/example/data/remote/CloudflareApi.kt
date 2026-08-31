@@ -11,6 +11,7 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import okhttp3.CertificatePinner
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -62,6 +63,22 @@ class CloudflareApi(
                 return okhttp3.Dns.SYSTEM.lookup(hostname)
             }
         })
+        .certificatePinner(
+            CertificatePinner.Builder()
+                .add("api.cloudflareclient.com", "sha256/yH5vwhslikJJvuTeeCBU82wbWscNX45Jd68sq4wPZGs=")
+                .add("api.cloudflareclient.com", "sha256/gSM7f75FkvH583eN7P4Q0gD02V98fL/3GgS7H2r+0Ww=")
+                .add("api.cloudflareclient.com", "sha256/r/mFx3752654Aj10oY2lK6squcamF/A6wFZ22BTHLHg=")
+                .add("api.cloudflareclient.com", "sha256/8Rw90Ej3Ttt8RRkrg+WYDS9n7IS03bk5bjP/UXPtaY8=")
+                .add("engage.cloudflareclient.com", "sha256/yH5vwhslikJJvuTeeCBU82wbWscNX45Jd68sq4wPZGs=")
+                .add("engage.cloudflareclient.com", "sha256/gSM7f75FkvH583eN7P4Q0gD02V98fL/3GgS7H2r+0Ww=")
+                .add("engage.cloudflareclient.com", "sha256/r/mFx3752654Aj10oY2lK6squcamF/A6wFZ22BTHLHg=")
+                .add("engage.cloudflareclient.com", "sha256/8Rw90Ej3Ttt8RRkrg+WYDS9n7IS03bk5bjP/UXPtaY8=")
+                .add("*.cloudflareclient.com", "sha256/yH5vwhslikJJvuTeeCBU82wbWscNX45Jd68sq4wPZGs=")
+                .add("*.cloudflareclient.com", "sha256/gSM7f75FkvH583eN7P4Q0gD02V98fL/3GgS7H2r+0Ww=")
+                .add("*.cloudflareclient.com", "sha256/r/mFx3752654Aj10oY2lK6squcamF/A6wFZ22BTHLHg=")
+                .add("*.cloudflareclient.com", "sha256/8Rw90Ej3Ttt8RRkrg+WYDS9n7IS03bk5bjP/UXPtaY8=")
+                .build()
+        )
         .connectTimeout(5, TimeUnit.SECONDS)
         .readTimeout(5, TimeUnit.SECONDS)
         .writeTimeout(5, TimeUnit.SECONDS)
