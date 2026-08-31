@@ -52,7 +52,8 @@ class AwgVpnService : VpnService() {
         when (action) {
             ACTION_CONNECT -> {
                 val configRaw = intent.getStringExtra(EXTRA_CONFIG_RAW)
-                val configName = intent.getStringExtra(EXTRA_CONFIG_NAME) ?: "VPN Tunnel"
+                val rawConfigName = intent.getStringExtra(EXTRA_CONFIG_NAME)
+                val configName = ConfigParser.sanitizeConfigName(rawConfigName, "VPN Tunnel")
 
                 if (!configRaw.isNullOrBlank()) {
                     val parsed = ConfigParser.parse(configRaw, configName).getOrNull()
