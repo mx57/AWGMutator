@@ -4,8 +4,11 @@ import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Test
+import org.junit.runner.RunWith
+import org.robolectric.RobolectricTestRunner
 import java.lang.reflect.Method
 
+@RunWith(RobolectricTestRunner::class)
 class CloudflareApiTest {
 
     @Test
@@ -31,5 +34,85 @@ class CloudflareApiTest {
         assertEquals("0, 0, 0", CloudflareApi.normalizeReserved(null))
         assertEquals("1, 2, 3", CloudflareApi.normalizeReserved("1, 2, 3"))
         assertEquals("10, 20, 30", CloudflareApi.normalizeReserved("[10, 20, 30]"))
+    }
+
+    @Test
+    fun testBuildWarpConfigFromResponse_withValidJson() {
+        val api = CloudflareApi()
+        val dummyKeyPair = com.example.util.WireGuardKeyGen.generateKeyPair()
+        val regJson = org.json.JSONObject().apply {
+            put("id", "acc123")
+            put("token", "tok123")
+            put("client_id", "1, 2, 3")
+            put("config", org.json.JSONObject().apply {
+                put("interface", org.json.JSONObject().apply {
+                    put("addresses", org.json.JSONObject().apply {
+                        put("v4", "172.16.0.2")
+                        put("v6", "2606:4700:110:893c::1")
+                    })
+                })
+                put("peers", org.json.JSONArray().apply {
+                    put(org.json.JSONObject().apply {
+                        put("public_key", "peer_pub_key_123")
+                        put("endpoint", org.json.JSONObject().apply {
+                            put("v4", "188.114.97.5:2408")
+                            put("v6", "[2606:4700:d0::a29f:c001]:2408")
+                        })
+                    })
+                })
+            })
+        }
+
+        val regResult = CloudflareApi.RegistrationResult(
+            regJson = regJson,
+            accountId = "acc123",
+            accessToken = "tok123",
+            keyPair = dummyKeyPair
+        )
+
+        val warpConfig = api.buildWarpConfigFromResponse(regResult, null, licenseKey = "VALID_LICENSE")
+
+        assertEquals("acc123", warpConfig.accountId)
+        assertEquals("tok123", warpConfig.accessToken)
+        assertEquals(dummyKeyPair.privateKey, warpConfig.privateKey)
+        assertEquals(dummyKeyPair.publicKey, warpConfig.publicKey)
+        assertEquals("172.16.0.2/32", warpConfig.v4Address)
+        assertEquals("2606:4700:110:893c::1/128", warpConfig.v6Address)
+        assertEquals("188.114.97.5:2408", warpConfig.endpointV4)
+        assertEquals("[2606:4700:d0::a29f:c001]:2408", warpConfig.endpointV6)
+        assertEquals("peer_pub_key_123", warpConfig.peerPublicKey)
+        assertEquals("1, 2, 3", warpConfig.reserved)
+        org.junit.Assert.assertTrue(warpConfig.warpPlusEnabled)
+    }
+
+    @Test
+    fun testBuildWarpConfigFromResponse_withBlockedEndpoints_fallbackToAnycast() {
+        val api = CloudflareApi()
+        val dummyKeyPair = com.example.util.WireGuardKeyGen.generateKeyPair()
+        val regJson = org.json.JSONObject().apply {
+            put("id", "acc123")
+            put("token", "tok123")
+            put("config", org.json.JSONObject().apply {
+                put("peers", org.json.JSONArray().apply {
+                    put(org.json.JSONObject().apply {
+                        put("endpoint", org.json.JSONObject().apply {
+                            put("v4", "162.159.192.1:2408")
+                        })
+                    })
+                })
+            })
+        }
+
+        val regResult = CloudflareApi.RegistrationResult(
+            regJson = regJson,
+            accountId = "acc123",
+            accessToken = "tok123",
+            keyPair = dummyKeyPair
+        )
+
+        val warpConfig = api.buildWarpConfigFromResponse(regResult, null, licenseKey = null)
+
+        assertEquals("188.114.97.1:854", warpConfig.endpointV4)
+        org.junit.Assert.assertFalse(warpConfig.warpPlusEnabled)
     }
 }

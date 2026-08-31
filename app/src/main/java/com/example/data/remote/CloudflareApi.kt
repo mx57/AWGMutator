@@ -117,6 +117,13 @@ class CloudflareApi(
         }
     }
 
+    internal data class RegistrationResult(
+        val regJson: JSONObject,
+        val accountId: String,
+        val accessToken: String,
+        val keyPair: WireGuardKeyGen.KeyPairData
+    )
+
     /**
      * Registers a new Cloudflare WARP account by automatically attempting available mirrors with failover,
      * binds license if provided, and configures optimal DNS servers.
@@ -131,141 +138,10 @@ class CloudflareApi(
         for (mirror in sortedMirrors) {
             for (attempt in 1..2) {
                 try {
-                    val keyPair = WireGuardKeyGen.generateKeyPair()
-                    val installId = generateRandomString(22)
-                    val fcmToken = "$installId:${generateRandomString(140)}"
-                    val isoTimestamp = getIsoTimestamp()
-
-                    val regBodyJson = JSONObject().apply {
-                        put("key", keyPair.publicKey)
-                        put("install_id", installId)
-                        put("fcm_token", fcmToken)
-                        put("tos", isoTimestamp)
-                        put("model", "Android")
-                        put("serial_number", installId)
-                        put("locale", "en_US")
-                        put("type", "Android")
-                    }
-
-                    val reqBuilder = Request.Builder()
-                        .url("${mirror.url}/reg")
-                        .addHeader("User-Agent", "okhttp/3.12.1")
-                        .addHeader("CF-Client-Version", "a-6.30-3900")
-                        .addHeader("Content-Type", "application/json; charset=UTF-8")
-                        .post(regBodyJson.toString().toRequestBody(jsonMediaType))
-
-                    if (mirror.hostHeader != null) {
-                        reqBuilder.addHeader("Host", mirror.hostHeader)
-                    }
-
-                    val regResponse = client.newCall(reqBuilder.build()).execute()
-                    val regCode = regResponse.code
-                    val regBody = regResponse.body?.string().orEmpty()
-                    regResponse.close()
-
-                    if (regCode == 429) {
-                        delay(400L * attempt)
-                        continue
-                    }
-
-                    if (!regResponse.isSuccessful || regBody.isBlank()) {
-                        continue
-                    }
-
-                    val regJson = JSONObject(regBody)
-                    val accountId = regJson.optString("id")
-                    val accessToken = regJson.optString("token")
-
-                    if (accountId.isBlank() || accessToken.isBlank()) {
-                        continue
-                    }
-
-                    // Step 2: Enable WARP on account
-                    val enableBodyJson = JSONObject().apply {
-                        put("warp_enabled", true)
-                        if (!licenseKey.isNullOrBlank()) {
-                            put("license", licenseKey.trim())
-                        }
-                    }
-
-                    val patchBuilder = Request.Builder()
-                        .url("${mirror.url}/reg/$accountId")
-                        .addHeader("User-Agent", "okhttp/3.12.1")
-                        .addHeader("CF-Client-Version", "a-6.30-3900")
-                        .addHeader("Authorization", "Bearer $accessToken")
-                        .patch(enableBodyJson.toString().toRequestBody(jsonMediaType))
-
-                    if (mirror.hostHeader != null) {
-                        patchBuilder.addHeader("Host", mirror.hostHeader)
-                    }
-
-                    val patchResponse = client.newCall(patchBuilder.build()).execute()
-                    val patchBody = patchResponse.body?.string().orEmpty()
-                    patchResponse.close()
-
-                    val configJson = if (patchResponse.isSuccessful && patchBody.isNotBlank()) {
-                        JSONObject(patchBody)
-                    } else {
-                        regJson
-                    }
-
-                    val configObj = configJson.optJSONObject("config") ?: regJson.optJSONObject("config")
-                    val interfaceObj = configObj?.optJSONObject("interface")
-                    val addressesObj = interfaceObj?.optJSONObject("addresses")
-                    val v4Address = addressesObj?.optString("v4", "172.16.0.2/32") ?: "172.16.0.2/32"
-                    val v6Address = addressesObj?.optString("v6", "2606:4700:110:893c::/128") ?: "2606:4700:110:893c::/128"
-
-                    val peersArray = configObj?.optJSONArray("peers")
-                    val peerObj = peersArray?.optJSONObject(0)
-                    val rawPeerKey = peerObj?.optString("public_key")
-                    val peerPublicKey = if (!rawPeerKey.isNullOrBlank()) {
-                        rawPeerKey
-                    } else {
-                        peerObj?.optJSONObject("public_key")?.optString("key", "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=")
-                            ?: "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo="
-                    }
-
-                    val endpointObj = peerObj?.optJSONObject("endpoint")
-                    val rawEndpointV4 = endpointObj?.optString("v4")
-                    val hostEndpoint = endpointObj?.optString("host")
-                    val rawEndpointV6 = endpointObj?.optString("v6")
-
-                    // Prioritize clean, unblocked Cloudflare Anycast IP ranges (188.114.97.x, 188.114.96.x)
-                    // over blocked 162.159.192.x / 162.159.193.x
-                    val chosenV4 = when {
-                        !rawEndpointV4.isNullOrBlank() && !rawEndpointV4.startsWith("162.159.192") && !rawEndpointV4.startsWith("162.159.193") -> rawEndpointV4
-                        !hostEndpoint.isNullOrBlank() && !hostEndpoint.contains("engage.cloudflareclient.com") -> hostEndpoint
-                        else -> "188.114.97.1:854"
-                    }
-                    val endpointV4 = com.example.domain.model.AwgConfig.sanitizeEndpoint(chosenV4, defaultPort = 854)
-                    val endpointV6 = com.example.domain.model.AwgConfig.sanitizeEndpoint(
-                        if (!rawEndpointV6.isNullOrBlank()) rawEndpointV6 else "[2606:4700:d0::a29f:c001]",
-                        defaultPort = 854
-                    )
-
-                    // Extract actual client_id assigned by Cloudflare WARP backend
-                    val rawClientId = configObj?.opt("client_id")
-                        ?: interfaceObj?.opt("client_id")
-                        ?: configJson.opt("client_id")
-                        ?: regJson.opt("client_id")
-
-                    val reservedStr = normalizeReserved(rawClientId)
-
-                    return@withContext Result.success(
-                        WarpConfig(
-                            accountId = accountId,
-                            accessToken = accessToken,
-                            privateKey = keyPair.privateKey,
-                            publicKey = keyPair.publicKey,
-                            v4Address = if (v4Address.contains("/")) v4Address else "$v4Address/32",
-                            v6Address = if (v6Address.contains("/")) v6Address else "$v6Address/128",
-                            endpointV4 = endpointV4,
-                            endpointV6 = endpointV6,
-                            reserved = reservedStr,
-                            peerPublicKey = peerPublicKey,
-                            warpPlusEnabled = !licenseKey.isNullOrBlank()
-                        )
-                    )
+                    val regResult = registerAccountOnMirror(mirror, attempt) ?: continue
+                    val patchJson = enableWarpAccount(mirror, regResult.accountId, regResult.accessToken, licenseKey)
+                    val config = buildWarpConfigFromResponse(regResult, patchJson, licenseKey)
+                    return@withContext Result.success(config)
                 } catch (_: Exception) {
                     // Try next mirror
                 }
@@ -274,6 +150,160 @@ class CloudflareApi(
 
         Result.failure(
             IllegalStateException("Не удалось зарегистрировать устройство на серверах Cloudflare WARP. Пожалуйста, проверьте подключение к сети или импортируйте собственный рабочий .conf файл.")
+        )
+    }
+
+    private suspend fun registerAccountOnMirror(
+        mirror: CloudflareMirror,
+        attempt: Int
+    ): RegistrationResult? {
+        val keyPair = WireGuardKeyGen.generateKeyPair()
+        val installId = generateRandomString(22)
+        val fcmToken = "$installId:${generateRandomString(140)}"
+        val isoTimestamp = getIsoTimestamp()
+
+        val regBodyJson = JSONObject().apply {
+            put("key", keyPair.publicKey)
+            put("install_id", installId)
+            put("fcm_token", fcmToken)
+            put("tos", isoTimestamp)
+            put("model", "Android")
+            put("serial_number", installId)
+            put("locale", "en_US")
+            put("type", "Android")
+        }
+
+        val reqBuilder = Request.Builder()
+            .url("${mirror.url}/reg")
+            .addHeader("User-Agent", "okhttp/3.12.1")
+            .addHeader("CF-Client-Version", "a-6.30-3900")
+            .addHeader("Content-Type", "application/json; charset=UTF-8")
+            .post(regBodyJson.toString().toRequestBody(jsonMediaType))
+
+        if (mirror.hostHeader != null) {
+            reqBuilder.addHeader("Host", mirror.hostHeader)
+        }
+
+        val regResponse = client.newCall(reqBuilder.build()).execute()
+        val regCode = regResponse.code
+        val regBody = regResponse.body?.string().orEmpty()
+        regResponse.close()
+
+        if (regCode == 429) {
+            delay(400L * attempt)
+            return null
+        }
+
+        if (!regResponse.isSuccessful || regBody.isBlank()) {
+            return null
+        }
+
+        val regJson = JSONObject(regBody)
+        val accountId = regJson.optString("id")
+        val accessToken = regJson.optString("token")
+
+        if (accountId.isBlank() || accessToken.isBlank()) {
+            return null
+        }
+
+        return RegistrationResult(regJson, accountId, accessToken, keyPair)
+    }
+
+    private fun enableWarpAccount(
+        mirror: CloudflareMirror,
+        accountId: String,
+        accessToken: String,
+        licenseKey: String?
+    ): JSONObject? {
+        val enableBodyJson = JSONObject().apply {
+            put("warp_enabled", true)
+            if (!licenseKey.isNullOrBlank()) {
+                put("license", licenseKey.trim())
+            }
+        }
+
+        val patchBuilder = Request.Builder()
+            .url("${mirror.url}/reg/$accountId")
+            .addHeader("User-Agent", "okhttp/3.12.1")
+            .addHeader("CF-Client-Version", "a-6.30-3900")
+            .addHeader("Authorization", "Bearer $accessToken")
+            .patch(enableBodyJson.toString().toRequestBody(jsonMediaType))
+
+        if (mirror.hostHeader != null) {
+            patchBuilder.addHeader("Host", mirror.hostHeader)
+        }
+
+        val patchResponse = client.newCall(patchBuilder.build()).execute()
+        val patchBody = patchResponse.body?.string().orEmpty()
+        patchResponse.close()
+
+        return if (patchResponse.isSuccessful && patchBody.isNotBlank()) {
+            JSONObject(patchBody)
+        } else {
+            null
+        }
+    }
+
+    internal fun buildWarpConfigFromResponse(
+        regResult: RegistrationResult,
+        patchJson: JSONObject?,
+        licenseKey: String?
+    ): WarpConfig {
+        val configJson = patchJson ?: regResult.regJson
+        val configObj = configJson.optJSONObject("config") ?: regResult.regJson.optJSONObject("config")
+        val interfaceObj = configObj?.optJSONObject("interface")
+        val addressesObj = interfaceObj?.optJSONObject("addresses")
+        val v4Address = addressesObj?.optString("v4", "172.16.0.2/32") ?: "172.16.0.2/32"
+        val v6Address = addressesObj?.optString("v6", "2606:4700:110:893c::/128") ?: "2606:4700:110:893c::/128"
+
+        val peersArray = configObj?.optJSONArray("peers")
+        val peerObj = peersArray?.optJSONObject(0)
+        val rawPeerKey = peerObj?.optString("public_key")
+        val peerPublicKey = if (!rawPeerKey.isNullOrBlank()) {
+            rawPeerKey
+        } else {
+            peerObj?.optJSONObject("public_key")?.optString("key", "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=")
+                ?: "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo="
+        }
+
+        val endpointObj = peerObj?.optJSONObject("endpoint")
+        val rawEndpointV4 = endpointObj?.optString("v4")
+        val hostEndpoint = endpointObj?.optString("host")
+        val rawEndpointV6 = endpointObj?.optString("v6")
+
+        // Prioritize clean, unblocked Cloudflare Anycast IP ranges (188.114.97.x, 188.114.96.x)
+        // over blocked 162.159.192.x / 162.159.193.x
+        val chosenV4 = when {
+            !rawEndpointV4.isNullOrBlank() && !rawEndpointV4.startsWith("162.159.192") && !rawEndpointV4.startsWith("162.159.193") -> rawEndpointV4
+            !hostEndpoint.isNullOrBlank() && !hostEndpoint.contains("engage.cloudflareclient.com") -> hostEndpoint
+            else -> "188.114.97.1:854"
+        }
+        val endpointV4 = com.example.domain.model.AwgConfig.sanitizeEndpoint(chosenV4, defaultPort = 854)
+        val endpointV6 = com.example.domain.model.AwgConfig.sanitizeEndpoint(
+            if (!rawEndpointV6.isNullOrBlank()) rawEndpointV6 else "[2606:4700:d0::a29f:c001]",
+            defaultPort = 854
+        )
+
+        // Extract actual client_id assigned by Cloudflare WARP backend
+        val rawClientId = configObj?.opt("client_id")
+            ?: interfaceObj?.opt("client_id")
+            ?: configJson.opt("client_id")
+            ?: regResult.regJson.opt("client_id")
+
+        val reservedStr = normalizeReserved(rawClientId)
+
+        return WarpConfig(
+            accountId = regResult.accountId,
+            accessToken = regResult.accessToken,
+            privateKey = regResult.keyPair.privateKey,
+            publicKey = regResult.keyPair.publicKey,
+            v4Address = if (v4Address.contains("/")) v4Address else "$v4Address/32",
+            v6Address = if (v6Address.contains("/")) v6Address else "$v6Address/128",
+            endpointV4 = endpointV4,
+            endpointV6 = endpointV6,
+            reserved = reservedStr,
+            peerPublicKey = peerPublicKey,
+            warpPlusEnabled = !licenseKey.isNullOrBlank()
         )
     }
 
