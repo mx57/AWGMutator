@@ -115,32 +115,7 @@ class TunnelManager(private val context: Context) {
     }
 
     fun connect(rawConfig: AwgConfig) {
-        val isCloudflareWarp = rawConfig.peerPublicKey.trim() == "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=" ||
-                rawConfig.isWarp
-
-        var config = rawConfig
-        if (isCloudflareWarp) {
-            var cleanDns = config.dns
-            if (cleanDns.isBlank() || cleanDns.contains("0.0.0.0")) {
-                cleanDns = "1.1.1.1, 1.0.0.1, 8.8.8.8"
-            }
-
-            val warpH1 = AwgConfig.calculateWarpH1(config.reserved)
-
-            config = config.copy(
-                h1 = if (warpH1 != 1L) warpH1 else (if (config.h1 > 0L) config.h1 else 1L),
-                h2 = if (config.h2 > 0L) config.h2 else 2L,
-                h3 = if (config.h3 > 0L) config.h3 else 3L,
-                h4 = if (config.h4 > 0L) config.h4 else 4L,
-                jc = if (config.jc > 0) config.jc else 4,
-                jmin = if (config.jmin > 0) config.jmin else 40,
-                jmax = if (config.jmax > 0) config.jmax else 70,
-                mtu = if (config.mtu in 1200..1360) config.mtu else 1280,
-                dns = cleanDns,
-                endpoint = config.endpoint.ifBlank { "188.114.97.1:854" },
-                isWarp = true
-            )
-        }
+        val (config, isCloudflareWarp) = prepareConfig(rawConfig)
 
         val sanitizedEndpoint = AwgConfig.sanitizeEndpoint(config.endpoint, defaultPort = if (isCloudflareWarp) 854 else 51820)
         log("DEVICE_INFO", "Device: ${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}, Android ${android.os.Build.VERSION.RELEASE} (API ${android.os.Build.VERSION.SDK_INT})")
@@ -155,35 +130,8 @@ class TunnelManager(private val context: Context) {
 
         scope.launch {
             try {
-                val confText = config.toConfString()
-                log("TUN_CONF", "Generated AmneziaWG configuration:\n$confText")
-
-                // Strip extended attributes (I1-I4, SNI, S3, S4, Reserved) not supported by native Config.parse
-                val extendedKeys = setOf("reserved", "sni", "i1", "i2", "i3", "i4", "s3", "s4")
-                val nativeConf = confText.lines().filterNot { line ->
-                    val key = line.substringBefore("=").trim().lowercase()
-                    key in extendedKeys
-                }.joinToString("\n")
-
-                val stream = ByteArrayInputStream(nativeConf.toByteArray(Charsets.UTF_8))
-                val awgConfig = try {
-                    Config.parse(stream)
-                } catch (pe: Exception) {
-                    log("TUN_ERROR", "Configuration parse error: ${pe.message}")
-                    log("TUN_ERROR", Log.getStackTraceString(pe))
-                    throw pe
-                }
-
-                val iface = awgConfig.`interface`
-                val peer = awgConfig.peers.firstOrNull()
-                log("TUN_PARSED_DIAG", "Parsed AWG Interface: Addresses=${iface.addresses}, DNS=${iface.dnsServers}, MTU=${iface.mtu.orElse(0)}")
-                log(
-                    "TUN_PARSED_DIAG",
-                    "AWG Parameters: Jc=${iface.junkPacketCount.orElse(0)}, Jmin=${iface.junkPacketMinSize.orElse(0)}, Jmax=${iface.junkPacketMaxSize.orElse(0)}, S1=${iface.initPacketJunkSize.orElse(0)}, S2=${iface.responsePacketJunkSize.orElse(0)}, H1=${iface.initPacketMagicHeader.orElse(0L)}, H2=${iface.responsePacketMagicHeader.orElse(0L)}, H3=${iface.underloadPacketMagicHeader.orElse(0L)}, H4=${iface.transportPacketMagicHeader.orElse(0L)}"
-                )
-                if (peer != null) {
-                    log("TUN_PARSED_DIAG", "Parsed Peer: Endpoint=${peer.endpoint.orElse(null)}, AllowedIPs=${peer.allowedIps}")
-                }
+                val awgConfig = parseNativeConfig(config)
+                logParsedConfigDiagnostics(awgConfig)
 
                 log("TUN_LIFECYCLE", "Calling native AmneziaWG GoBackend setState(UP)...")
                 val resultingState = goBackend.setState(wgTunnel, Tunnel.State.UP, awgConfig)
@@ -218,6 +166,71 @@ class TunnelManager(private val context: Context) {
                     errorMessage = e.message ?: "Tunnel startup error"
                 )
             }
+        }
+    }
+
+    private fun prepareConfig(rawConfig: AwgConfig): Pair<AwgConfig, Boolean> {
+        val isCloudflareWarp = rawConfig.peerPublicKey.trim() == "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=" ||
+                rawConfig.isWarp
+
+        if (!isCloudflareWarp) {
+            return Pair(rawConfig, false)
+        }
+
+        var cleanDns = rawConfig.dns
+        if (cleanDns.isBlank() || cleanDns.contains("0.0.0.0")) {
+            cleanDns = "1.1.1.1, 1.0.0.1, 8.8.8.8"
+        }
+
+        val warpH1 = AwgConfig.calculateWarpH1(rawConfig.reserved)
+
+        val preparedConfig = rawConfig.copy(
+            h1 = if (warpH1 != 1L) warpH1 else (if (rawConfig.h1 > 0L) rawConfig.h1 else 1L),
+            h2 = if (rawConfig.h2 > 0L) rawConfig.h2 else 2L,
+            h3 = if (rawConfig.h3 > 0L) rawConfig.h3 else 3L,
+            h4 = if (rawConfig.h4 > 0L) rawConfig.h4 else 4L,
+            jc = if (rawConfig.jc > 0) rawConfig.jc else 4,
+            jmin = if (rawConfig.jmin > 0) rawConfig.jmin else 40,
+            jmax = if (rawConfig.jmax > 0) rawConfig.jmax else 70,
+            mtu = if (rawConfig.mtu in 1200..1360) rawConfig.mtu else 1280,
+            dns = cleanDns,
+            endpoint = rawConfig.endpoint.ifBlank { "188.114.97.1:854" },
+            isWarp = true
+        )
+        return Pair(preparedConfig, true)
+    }
+
+    private fun parseNativeConfig(config: AwgConfig): Config {
+        val confText = config.toConfString()
+        log("TUN_CONF", "Generated AmneziaWG configuration:\n$confText")
+
+        // Strip extended attributes (I1-I4, SNI, S3, S4, Reserved) not supported by native Config.parse
+        val extendedKeys = setOf("reserved", "sni", "i1", "i2", "i3", "i4", "s3", "s4")
+        val nativeConf = confText.lines().filterNot { line ->
+            val key = line.substringBefore("=").trim().lowercase()
+            key in extendedKeys
+        }.joinToString("\n")
+
+        val stream = ByteArrayInputStream(nativeConf.toByteArray(Charsets.UTF_8))
+        return try {
+            Config.parse(stream)
+        } catch (pe: Exception) {
+            log("TUN_ERROR", "Configuration parse error: ${pe.message}")
+            log("TUN_ERROR", Log.getStackTraceString(pe))
+            throw pe
+        }
+    }
+
+    private fun logParsedConfigDiagnostics(awgConfig: Config) {
+        val iface = awgConfig.`interface`
+        val peer = awgConfig.peers.firstOrNull()
+        log("TUN_PARSED_DIAG", "Parsed AWG Interface: Addresses=${iface.addresses}, DNS=${iface.dnsServers}, MTU=${iface.mtu.orElse(0)}")
+        log(
+            "TUN_PARSED_DIAG",
+            "AWG Parameters: Jc=${iface.junkPacketCount.orElse(0)}, Jmin=${iface.junkPacketMinSize.orElse(0)}, Jmax=${iface.junkPacketMaxSize.orElse(0)}, S1=${iface.initPacketJunkSize.orElse(0)}, S2=${iface.responsePacketJunkSize.orElse(0)}, H1=${iface.initPacketMagicHeader.orElse(0L)}, H2=${iface.responsePacketMagicHeader.orElse(0L)}, H3=${iface.underloadPacketMagicHeader.orElse(0L)}, H4=${iface.transportPacketMagicHeader.orElse(0L)}"
+        )
+        if (peer != null) {
+            log("TUN_PARSED_DIAG", "Parsed Peer: Endpoint=${peer.endpoint.orElse(null)}, AllowedIPs=${peer.allowedIps}")
         }
     }
 

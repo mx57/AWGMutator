@@ -69,36 +69,41 @@ class RootTunnelManager(private val context: Context) {
         // 1. Clean previous interface if any
         teardownInterface()
 
-        val primaryDns = config.dns.split(",").firstOrNull()?.trim() ?: "1.1.1.1"
-        val ipAddr = config.address.let { if (it.contains("/")) it else "$it/32" }
+        val rawDns = config.dns.split(",").firstOrNull()?.trim() ?: "1.1.1.1"
+        val safeDns = RootRunner.escapeArg(rawDns)
+        val rawIp = config.address.let { if (it.contains("/")) it else "$it/32" }
+        val safeIp = RootRunner.escapeArg(rawIp)
+        val safeConfPath = RootRunner.escapeArg(confPath)
+        val safeIface = RootRunner.escapeArg(ifaceName)
+        val safeMtu = config.mtu.toString().filter { it.isDigit() }.ifEmpty { "1420" }
 
         val commands = mutableListOf<String>()
 
         // 2. Create interface
-        commands.add("ip link add dev $ifaceName type wireguard || ip link add dev $ifaceName type amneziawg || true")
-        commands.add("ip address add $ipAddr dev $ifaceName || true")
-        commands.add("ip link set mtu ${config.mtu} dev $ifaceName || true")
+        commands.add("ip link add dev $safeIface type wireguard || ip link add dev $safeIface type amneziawg || true")
+        commands.add("ip address add $safeIp dev $safeIface || true")
+        commands.add("ip link set mtu $safeMtu dev $safeIface || true")
 
         // 3. Configure WG/AWG
-        commands.add("wg setconf $ifaceName $confPath || awg setconf $ifaceName $confPath || true")
-        commands.add("ip link set up dev $ifaceName")
+        commands.add("wg setconf $safeIface $safeConfPath || awg setconf $safeIface $safeConfPath || true")
+        commands.add("ip link set up dev $safeIface")
 
         // 4. Policy Routing
         commands.add("ip rule add not fwmark $fwMark table $tableId priority 1000 || true")
         commands.add("ip rule add table main suppress_prefixlength 0 priority 990 || true")
-        commands.add("ip route add default dev $ifaceName table $tableId || true")
+        commands.add("ip route add default dev $safeIface table $tableId || true")
 
         // 5. iptables MSS clamping and DNS redirect via isolated chains
         commands.add("iptables -t nat -N AWG_OUTPUT || true")
         commands.add("iptables -t nat -F AWG_OUTPUT || true")
         commands.add("iptables -t nat -C OUTPUT -j AWG_OUTPUT 2>/dev/null || iptables -t nat -I OUTPUT -j AWG_OUTPUT || true")
-        commands.add("iptables -t nat -A AWG_OUTPUT -p udp --dport 53 -j DNAT --to-destination $primaryDns:53 || true")
-        commands.add("iptables -t nat -A AWG_OUTPUT -p tcp --dport 53 -j DNAT --to-destination $primaryDns:53 || true")
+        commands.add("iptables -t nat -A AWG_OUTPUT -p udp --dport 53 -j DNAT --to-destination $safeDns:53 || true")
+        commands.add("iptables -t nat -A AWG_OUTPUT -p tcp --dport 53 -j DNAT --to-destination $safeDns:53 || true")
 
         commands.add("iptables -t mangle -N AWG_POSTROUTING || true")
         commands.add("iptables -t mangle -F AWG_POSTROUTING || true")
         commands.add("iptables -t mangle -C POSTROUTING -j AWG_POSTROUTING 2>/dev/null || iptables -t mangle -I POSTROUTING -j AWG_POSTROUTING || true")
-        commands.add("iptables -t mangle -A AWG_POSTROUTING -p tcp --tcp-flags SYN,RST SYN -o $ifaceName -j TCPMSS --clamp-mss-to-pmtu || true")
+        commands.add("iptables -t mangle -A AWG_POSTROUTING -p tcp --tcp-flags SYN,RST SYN -o $safeIface -j TCPMSS --clamp-mss-to-pmtu || true")
 
         val res = RootRunner.execute(*commands.toTypedArray())
 
@@ -174,17 +179,19 @@ class RootTunnelManager(private val context: Context) {
     }
 
     private suspend fun checkInterfaceUp(): Boolean {
-        val check = RootRunner.execute("ip link show dev $ifaceName")
+        val safeIface = RootRunner.escapeArg(ifaceName)
+        val check = RootRunner.execute("ip link show dev $safeIface")
         return check.isSuccess && check.stdout.contains(ifaceName)
     }
 
     private fun startStatsMonitor() {
         statsJob?.cancel()
+        val safeIface = RootRunner.escapeArg(ifaceName)
         statsJob = scope.launch {
             while (isActive) {
                 delay(2000)
                 try {
-                    val stats = RootRunner.execute("cat /sys/class/net/$ifaceName/statistics/rx_bytes", "cat /sys/class/net/$ifaceName/statistics/tx_bytes")
+                    val stats = RootRunner.execute("cat /sys/class/net/$safeIface/statistics/rx_bytes", "cat /sys/class/net/$safeIface/statistics/tx_bytes")
                     if (stats.isSuccess) {
                         val lines = stats.stdout.lines()
                         val rx = lines.getOrNull(0)?.trim()?.toLongOrNull() ?: 0L

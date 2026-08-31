@@ -87,95 +87,14 @@ class AntiDpiViewModel(
         val vulns = mutableListOf<DpiVulnerability>()
         var score = 100
 
-        // 1. Check Magic Headers H1..H4
-        val uniqueHeaders = setOf(config.h1, config.h2, config.h3, config.h4).size
-        if (config.h1 == 1L && config.h2 == 2L && config.h3 == 3L && config.h4 == 4L) {
-            score -= 35
-            vulns.add(
-                DpiVulnerability(
-                    title = "Standard WireGuard Headers Detected",
-                    severity = DpiSeverity.CRITICAL,
-                    description = "Default H1-H4 header bytes (1, 2, 3, 4) match standard WireGuard. ISP DPI filters (e.g. TSPU / RKN) detect and block this in < 1 second.",
-                    recommendation = "Randomize H1-H4 magic numbers to unique 32-bit integers."
-                )
-            )
-        } else if (uniqueHeaders < 4) {
-            score -= 20
-            vulns.add(
-                DpiVulnerability(
-                    title = "Header Magic Number Collision",
-                    severity = DpiSeverity.WARNING,
-                    description = "H1..H4 contain duplicate values, which may cause protocol desynchronization.",
-                    recommendation = "Ensure all 4 header magic values are distinct."
-                )
-            )
-        }
-
-        // 2. Check S1..S4 Handshake Obfuscation
-        if (config.s1 == 0 || config.s2 == 0) {
-            score -= 25
-            vulns.add(
-                DpiVulnerability(
-                    title = "Zero Handshake Prefix Padding",
-                    severity = DpiSeverity.CRITICAL,
-                    description = "Without S1/S2 padding, handshake packet length is exactly 148 and 92 bytes, which matches standard WireGuard fingerprints.",
-                    recommendation = "Set S1 to 15..45 bytes and S2 to 20..55 bytes."
-                )
-            )
-        } else if (config.s1 < 10 || config.s2 < 12) {
-            score -= 10
-            vulns.add(
-                DpiVulnerability(
-                    title = "Handshake Padding Too Short",
-                    severity = DpiSeverity.WARNING,
-                    description = "S1/S2 padding below 10 bytes provides marginal entropy against statistical packet size analysis.",
-                    recommendation = "Increase S1 and S2 padding above 15 bytes."
-                )
-            )
-        }
-
-        // 3. Check Junk Packets (Jc, Jmin, Jmax)
-        if (config.jc == 0) {
-            score -= 20
-            vulns.add(
-                DpiVulnerability(
-                    title = "No Junk Packets (Jc = 0)",
-                    severity = DpiSeverity.WARNING,
-                    description = "Initial handshake contains zero decoy junk packets. Passive DPI can track connection initiation.",
-                    recommendation = "Enable Jc between 3 and 7 packets."
-                )
-            )
-        } else if (config.jmax <= config.jmin) {
-            score -= 15
-            vulns.add(
-                DpiVulnerability(
-                    title = "Static Junk Packet Size (Jmax <= Jmin)",
-                    severity = DpiSeverity.WARNING,
-                    description = "All junk packets are the exact same size, creating an easily detectable signature.",
-                    recommendation = "Set Jmax at least 128 bytes greater than Jmin."
-                )
-            )
-        }
-
-        // 4. Check MTU
-        if (config.mtu > 1420) {
-            score -= 10
-            vulns.add(
-                DpiVulnerability(
-                    title = "High MTU (${config.mtu})",
-                    severity = DpiSeverity.WARNING,
-                    description = "MTU above 1420 may cause packet fragmentation on LTE/5G networks, leaking header structures.",
-                    recommendation = "Lower MTU to 1280-1360 for maximum stealth."
-                )
-            )
-        }
+        score -= checkMagicHeaders(config, vulns)
+        score -= checkHandshakeObfuscation(config, vulns)
+        score -= checkJunkPackets(config, vulns)
+        score -= checkMtu(config, vulns)
 
         val clampedScore = score.coerceIn(0, 100)
-        val rating = when {
-            clampedScore >= 85 -> "Ultra Stealth (DPI Immune)"
-            clampedScore >= 60 -> "Moderate Protection"
-            else -> "High DPI Detection Risk"
-        }
+        val rating = calculateRating(clampedScore)
+        val uniqueHeaders = setOf(config.h1, config.h2, config.h3, config.h4).size
 
         _uiState.value = _uiState.value.copy(
             analysis = DpiAnalysisResult(
@@ -188,6 +107,108 @@ class AntiDpiViewModel(
                 headerEntropyHigh = uniqueHeaders == 4 && config.h1 > 10000L
             )
         )
+    }
+
+    private fun checkMagicHeaders(config: AwgConfig, vulns: MutableList<DpiVulnerability>): Int {
+        val uniqueHeaders = setOf(config.h1, config.h2, config.h3, config.h4).size
+        if (config.h1 == 1L && config.h2 == 2L && config.h3 == 3L && config.h4 == 4L) {
+            vulns.add(
+                DpiVulnerability(
+                    title = "Standard WireGuard Headers Detected",
+                    severity = DpiSeverity.CRITICAL,
+                    description = "Default H1-H4 header bytes (1, 2, 3, 4) match standard WireGuard. ISP DPI filters (e.g. TSPU / RKN) detect and block this in < 1 second.",
+                    recommendation = "Randomize H1-H4 magic numbers to unique 32-bit integers."
+                )
+            )
+            return 35
+        }
+        if (uniqueHeaders < 4) {
+            vulns.add(
+                DpiVulnerability(
+                    title = "Header Magic Number Collision",
+                    severity = DpiSeverity.WARNING,
+                    description = "H1..H4 contain duplicate values, which may cause protocol desynchronization.",
+                    recommendation = "Ensure all 4 header magic values are distinct."
+                )
+            )
+            return 20
+        }
+        return 0
+    }
+
+    private fun checkHandshakeObfuscation(config: AwgConfig, vulns: MutableList<DpiVulnerability>): Int {
+        if (config.s1 == 0 || config.s2 == 0) {
+            vulns.add(
+                DpiVulnerability(
+                    title = "Zero Handshake Prefix Padding",
+                    severity = DpiSeverity.CRITICAL,
+                    description = "Without S1/S2 padding, handshake packet length is exactly 148 and 92 bytes, which matches standard WireGuard fingerprints.",
+                    recommendation = "Set S1 to 15..45 bytes and S2 to 20..55 bytes."
+                )
+            )
+            return 25
+        }
+        if (config.s1 < 10 || config.s2 < 12) {
+            vulns.add(
+                DpiVulnerability(
+                    title = "Handshake Padding Too Short",
+                    severity = DpiSeverity.WARNING,
+                    description = "S1/S2 padding below 10 bytes provides marginal entropy against statistical packet size analysis.",
+                    recommendation = "Increase S1 and S2 padding above 15 bytes."
+                )
+            )
+            return 10
+        }
+        return 0
+    }
+
+    private fun checkJunkPackets(config: AwgConfig, vulns: MutableList<DpiVulnerability>): Int {
+        if (config.jc == 0) {
+            vulns.add(
+                DpiVulnerability(
+                    title = "No Junk Packets (Jc = 0)",
+                    severity = DpiSeverity.WARNING,
+                    description = "Initial handshake contains zero decoy junk packets. Passive DPI can track connection initiation.",
+                    recommendation = "Enable Jc between 3 and 7 packets."
+                )
+            )
+            return 20
+        }
+        if (config.jmax <= config.jmin) {
+            vulns.add(
+                DpiVulnerability(
+                    title = "Static Junk Packet Size (Jmax <= Jmin)",
+                    severity = DpiSeverity.WARNING,
+                    description = "All junk packets are the exact same size, creating an easily detectable signature.",
+                    recommendation = "Set Jmax at least 128 bytes greater than Jmin."
+                )
+            )
+            return 15
+        }
+        return 0
+    }
+
+    private fun checkMtu(config: AwgConfig, vulns: MutableList<DpiVulnerability>): Int {
+        if (config.mtu > 1420) {
+            vulns.add(
+                DpiVulnerability(
+                    title = "High MTU (${config.mtu})",
+                    severity = DpiSeverity.WARNING,
+                    description = "MTU above 1420 may cause packet fragmentation on LTE/5G networks, leaking header structures.",
+                    recommendation = "Lower MTU to 1280-1360 for maximum stealth."
+                )
+            )
+            return 10
+        }
+        return 0
+    }
+
+    private fun calculateRating(clampedScore: Int): String {
+        return when {
+            clampedScore >= 85 -> "Ultra Stealth (DPI Immune)"
+            clampedScore >= 60 -> "Moderate Protection"
+            else -> "High DPI Detection Risk"
+        }
     }
 
     fun autoPatchDpiVulnerabilities() {
