@@ -1,8 +1,15 @@
 package com.example.data.remote
 
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.runBlocking
+import okhttp3.OkHttpClient
+import okhttp3.Request
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
@@ -10,6 +17,28 @@ import java.lang.reflect.Method
 
 @RunWith(RobolectricTestRunner::class)
 class CloudflareApiTest {
+
+    @Test
+    fun testAwaitExtension_cancellationCancelsCall() = runBlocking {
+        val client = OkHttpClient()
+        val request = Request.Builder().url("https://10.255.255.1/non-existent").build()
+
+        val call = client.newCall(request)
+        val job = async(Dispatchers.IO) {
+            call.await()
+        }
+
+        delay(50)
+        job.cancel()
+
+        try {
+            job.await()
+        } catch (_: Exception) {
+            // Expected cancellation or IO exception from cancellation
+        }
+
+        assertTrue("OkHttp Call should be cancelled when coroutine is cancelled", call.isCanceled())
+    }
 
     @Test
     fun testGenerateRandomString_usesSecureRandomAndNoHardcodedPrefixInFcmToken() {

@@ -11,11 +11,16 @@ import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.suspendCancellableCoroutine
+import okhttp3.Call
+import okhttp3.Callback
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.Response
 import org.json.JSONObject
+import java.io.IOException
 import java.net.InetAddress
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -23,6 +28,28 @@ import java.util.Locale
 import java.util.Random
 import java.util.TimeZone
 import java.util.concurrent.TimeUnit
+import kotlin.coroutines.resume
+import kotlin.coroutines.resumeWithException
+
+/**
+ * Extension function to execute an OkHttp Call asynchronously using suspendCancellableCoroutine.
+ * Cancels the underlying OkHttp Call if the coroutine is cancelled.
+ */
+suspend fun Call.await(): Response = suspendCancellableCoroutine { continuation ->
+    continuation.invokeOnCancellation {
+        cancel()
+    }
+    enqueue(object : Callback {
+        override fun onResponse(call: Call, response: Response) {
+            continuation.resume(response)
+        }
+
+        override fun onFailure(call: Call, e: IOException) {
+            if (continuation.isCancelled) return
+            continuation.resumeWithException(e)
+        }
+    })
+}
 
 /**
  * Data class representing a Cloudflare API Mirror endpoint with optional Host header override.
@@ -37,7 +64,7 @@ data class CloudflareMirror(
  * Robust Client for interacting with Cloudflare WARP client API with dynamic mirror speed probing,
  * custom anti-censorship DNS resolver, and DNS server integration.
  */
-class CloudflareApi(
+open class CloudflareApi(
     private val client: OkHttpClient = OkHttpClient.Builder()
         .dns(object : okhttp3.Dns {
             override fun lookup(hostname: String): List<InetAddress> {
@@ -95,7 +122,7 @@ class CloudflareApi(
         }
     }
 
-    private fun probeMirror(mirror: CloudflareMirror): Long? {
+    private suspend fun probeMirror(mirror: CloudflareMirror): Long? {
         val start = System.nanoTime()
         return try {
             val reqBuilder = Request.Builder()
@@ -108,7 +135,7 @@ class CloudflareApi(
                 reqBuilder.header("Host", mirror.hostHeader)
             }
 
-            client.newCall(reqBuilder.build()).execute().use { response ->
+            client.newCall(reqBuilder.build()).await().use { response ->
                 val elapsed = (System.nanoTime() - start) / 1_000_000
                 if (response.code in 200..499) elapsed else null
             }
@@ -129,7 +156,7 @@ class CloudflareApi(
      * binds license if provided, and configures optimal DNS servers.
      * If all mirrors fail due to censorship, synthesizes a 100% valid AmneziaWG/WARP configuration with working bypass endpoints.
      */
-    suspend fun generateWarpConfig(
+    open suspend fun generateWarpConfig(
         licenseKey: String? = null,
         dnsOverride: String? = null
     ): Result<WarpConfig> = withContext(Dispatchers.IO) {
@@ -173,12 +200,10 @@ class CloudflareApi(
             put("type", "Android")
         }
 
-        val reqBuilder = Request.Builder()
-            .url("${mirror.url}/reg")
-            .addHeader("User-Agent", "okhttp/3.12.1")
-            .addHeader("CF-Client-Version", "a-6.30-3900")
-            .addHeader("Content-Type", "application/json; charset=UTF-8")
-            .post(regBodyJson.toString().toRequestBody(jsonMediaType))
+                    val regResponse = client.newCall(reqBuilder.build()).await()
+                    val regCode = regResponse.code
+                    val regBody = regResponse.body?.string().orEmpty()
+                    regResponse.close()
 
         if (mirror.hostHeader != null) {
             reqBuilder.addHeader("Host", mirror.hostHeader)
@@ -222,12 +247,9 @@ class CloudflareApi(
             }
         }
 
-        val patchBuilder = Request.Builder()
-            .url("${mirror.url}/reg/$accountId")
-            .addHeader("User-Agent", "okhttp/3.12.1")
-            .addHeader("CF-Client-Version", "a-6.30-3900")
-            .addHeader("Authorization", "Bearer $accessToken")
-            .patch(enableBodyJson.toString().toRequestBody(jsonMediaType))
+                    val patchResponse = client.newCall(patchBuilder.build()).await()
+                    val patchBody = patchResponse.body?.string().orEmpty()
+                    patchResponse.close()
 
         if (mirror.hostHeader != null) {
             patchBuilder.addHeader("Host", mirror.hostHeader)

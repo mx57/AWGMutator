@@ -130,77 +130,13 @@ class AwgVpnService : VpnService() {
             App.instance.tunnelManager.log("VPN_ROUTING", "TUN MTU configured: $effectiveMtu bytes (Blocking I/O: true)")
 
             // 1. Assign Interface IP Addresses
-            val addresses = config.address.split(",").map { it.trim() }
-            var hasIpv4Address = false
-            var hasIpv6Address = false
-
-            for (addr in addresses) {
-                if (addr.isBlank()) continue
-                val parts = addr.split("/")
-                val ipStr = parts[0].trim()
-                val prefix = if (parts.size > 1) parts[1].trim().toIntOrNull() ?: if (ipStr.contains(":")) 64 else 32 else if (ipStr.contains(":")) 64 else 32
-                runCatching {
-                    val inet = InetAddress.getByName(ipStr)
-                    builder.addAddress(inet, prefix)
-                    if (ipStr.contains(":")) hasIpv6Address = true else hasIpv4Address = true
-                    App.instance.tunnelManager.log("VPN_ROUTING", "Assigned TUN Address: $ipStr/$prefix")
-                }
-            }
-
-            if (!hasIpv4Address) {
-                runCatching {
-                    builder.addAddress(InetAddress.getByName("10.2.0.2"), 32)
-                    App.instance.tunnelManager.log("VPN_ROUTING", "Assigned default fallback IPv4: 10.2.0.2/32")
-                }
-            }
-            if (!hasIpv6Address) {
-                runCatching {
-                    builder.addAddress(InetAddress.getByName("fd00:1:1::2"), 64)
-                    App.instance.tunnelManager.log("VPN_ROUTING", "Assigned default fallback IPv6: fd00:1:1::2/64")
-                }
-            }
+            configureAddresses(builder, config.address)
 
             // 2. Configure DNS Servers
-            val dnsServers = config.dns.split(",").map { it.trim() }.filter { it.isNotBlank() }
-            if (dnsServers.isNotEmpty()) {
-                for (dns in dnsServers) {
-                    runCatching {
-                        builder.addDnsServer(InetAddress.getByName(dns))
-                        App.instance.tunnelManager.log("VPN_ROUTING", "Configured DNS Server: $dns")
-                    }
-                }
-            } else {
-                runCatching {
-                    builder.addDnsServer(InetAddress.getByName("1.1.1.1"))
-                    builder.addDnsServer(InetAddress.getByName("8.8.8.8"))
-                    App.instance.tunnelManager.log("VPN_ROUTING", "Configured default DNS Servers: 1.1.1.1, 8.8.8.8")
-                }
-            }
+            configureDnsServers(builder, config.dns)
 
             // 3. Routing Table Modifications (AllowedIPs / Default Gateway Routes)
-            val routes = config.allowedIps.split(",").map { it.trim() }.filter { it.isNotBlank() }
-            if (routes.isEmpty() || routes.any { it == "0.0.0.0/0" }) {
-                runCatching {
-                    builder.addRoute(InetAddress.getByName("0.0.0.0"), 0)
-                    App.instance.tunnelManager.log("VPN_ROUTING", "Route Table: Added IPv4 default route 0.0.0.0/0 -> TUN")
-                }
-                runCatching {
-                    builder.addRoute(InetAddress.getByName("::"), 0)
-                    App.instance.tunnelManager.log("VPN_ROUTING", "Route Table: Added IPv6 default route ::/0 -> TUN")
-                }
-            } else {
-                for (cidr in routes) {
-                    val parts = cidr.split("/")
-                    if (parts.isNotEmpty()) {
-                        val ip = parts[0].trim()
-                        val mask = if (parts.size > 1) parts[1].trim().toIntOrNull() ?: if (ip.contains(":")) 64 else 32 else if (ip.contains(":")) 64 else 32
-                        runCatching {
-                            builder.addRoute(InetAddress.getByName(ip), mask)
-                            App.instance.tunnelManager.log("VPN_ROUTING", "Route Table: Added custom route $ip/$mask -> TUN")
-                        }
-                    }
-                }
-            }
+            configureRoutes(builder, config.allowedIps)
 
             // 4. Exclude AWGMutator app itself to prevent socket routing feedback loops
             runCatching {
@@ -209,32 +145,7 @@ class AwgVpnService : VpnService() {
             }
 
             // 5. Apply Split-Tunneling Routing Policies
-            val splitManager = App.instance.splitTunnelManager
-            val selectedApps = splitManager.getSelectedPackages()
-
-            when (splitManager.mode) {
-                SplitTunnelMode.ONLY_SELECTED_THROUGH_VPN -> {
-                    App.instance.tunnelManager.log("VPN_ROUTING", "Split-Tunnel Policy: Whitelist (${selectedApps.size} apps routed via VPN)")
-                    for (pkg in selectedApps) {
-                        runCatching {
-                            builder.addAllowedApplication(pkg)
-                            App.instance.tunnelManager.log("VPN_ROUTING", "  -> Allowed App: $pkg")
-                        }
-                    }
-                }
-                SplitTunnelMode.ALL_EXCEPT_SELECTED -> {
-                    App.instance.tunnelManager.log("VPN_ROUTING", "Split-Tunnel Policy: Blacklist (${selectedApps.size} apps bypassing VPN)")
-                    for (pkg in selectedApps) {
-                        runCatching {
-                            builder.addDisallowedApplication(pkg)
-                            App.instance.tunnelManager.log("VPN_ROUTING", "  -> Bypassed App: $pkg")
-                        }
-                    }
-                }
-                SplitTunnelMode.ALL_THROUGH_VPN -> {
-                    App.instance.tunnelManager.log("VPN_ROUTING", "Split-Tunnel Policy: Full Tunnel (All device apps routed through VPN)")
-                }
-            }
+            applySplitTunneling(builder)
 
             // 6. Bind Underlying Network to active physical connection (Android 9+)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.P) {
@@ -245,64 +156,7 @@ class AwgVpnService : VpnService() {
             vpnInterface = builder.establish()
 
             if (vpnInterface != null) {
-                val fd = vpnInterface!!.fileDescriptor
-                App.instance.tunnelManager.log("VPN_LIFECYCLE", "TUN interface established successfully! (Descriptor: $fd)")
-                updateNotification("Active: ${config.name} [Anti-DPI Guard]")
-
-                // Start User-space packet router with diagnostic inspection
-                packetRouter?.stop()
-                packetRouter = TunPacketRouter(
-                    vpnService = this,
-                    fileDescriptor = fd,
-                    config = config,
-                    onTrafficUpdate = { rx, tx ->
-                        App.instance.tunnelManager.updateBytes(rx, tx)
-                    }
-                )
-                packetRouter?.start()
-                App.instance.tunnelManager.log("VPN_ROUTING", "Packet router worker thread active, listening for TUN IPv4/IPv6 frames")
-
-                // Start Per-App traffic monitoring
-                App.instance.appTrafficTracker.startTracking()
-
-                // Mark VPN as CONNECTED
-                App.instance.tunnelManager.updateStatus(
-                    VpnStatus(
-                        state = VpnState.CONNECTED,
-                        activeConfigName = config.name,
-                        activeConfigId = config.id,
-                        endpoint = config.endpoint,
-                        connectedSince = System.currentTimeMillis()
-                    )
-                )
-
-                // Perform real egress and internet exit reachability check in background
-                serviceScope.launch {
-                    App.instance.tunnelManager.log("VPN_VERIFY", "Verifying egress public IP and tunnel connectivity...")
-                    val egress = App.instance.networkEgressVerifier.verifyEgress()
-                    val pingResult = App.instance.pingTester.testEndpoint(config.endpoint)
-
-                    App.instance.tunnelManager.log(
-                        "VPN_VERIFY",
-                        "Egress probe completed: Public IP=${egress.publicIp ?: "N/A"}, Country=${egress.countryCode ?: "N/A"}, Latency=${egress.latencyMs ?: pingResult.latencyMs}ms, Functional=${egress.isFunctional}"
-                    )
-
-                    val current = App.instance.tunnelManager.status.value
-                    if (current.state == VpnState.CONNECTED) {
-                        App.instance.tunnelManager.updateStatus(
-                            current.copy(
-                                egressIp = egress.publicIp,
-                                egressCountry = egress.countryCode,
-                                isEgressVerified = egress.isFunctional,
-                                currentPingMs = egress.latencyMs ?: pingResult.latencyMs
-                            )
-                        )
-                        if (egress.isFunctional) {
-                            updateNotification("Connected: ${config.name} (${egress.publicIp ?: "Online"})")
-                        }
-                    }
-                }
-
+                onTunnelEstablished(config, vpnInterface!!.fileDescriptor)
             } else {
                 App.instance.tunnelManager.log("VPN_ERROR", "Failed to establish TUN interface (builder.establish() returned null)")
                 stopTunnel("Failed to establish TUN interface")
@@ -310,6 +164,170 @@ class AwgVpnService : VpnService() {
         } catch (e: Exception) {
             App.instance.tunnelManager.log("VPN_ERROR", "TUN Initialization Exception: ${e.message}")
             stopTunnel("VPN Start Error: ${e.message}")
+        }
+    }
+
+    private fun configureAddresses(builder: Builder, addressString: String) {
+        val addresses = addressString.split(",").map { it.trim() }
+        var hasIpv4Address = false
+        var hasIpv6Address = false
+
+        for (addr in addresses) {
+            if (addr.isBlank()) continue
+            val parts = addr.split("/")
+            val ipStr = parts[0].trim()
+            val prefix = if (parts.size > 1) parts[1].trim().toIntOrNull() ?: if (ipStr.contains(":")) 64 else 32 else if (ipStr.contains(":")) 64 else 32
+            runCatching {
+                val inet = InetAddress.getByName(ipStr)
+                builder.addAddress(inet, prefix)
+                if (ipStr.contains(":")) hasIpv6Address = true else hasIpv4Address = true
+                App.instance.tunnelManager.log("VPN_ROUTING", "Assigned TUN Address: $ipStr/$prefix")
+            }
+        }
+
+        if (!hasIpv4Address) {
+            runCatching {
+                builder.addAddress(InetAddress.getByName("10.2.0.2"), 32)
+                App.instance.tunnelManager.log("VPN_ROUTING", "Assigned default fallback IPv4: 10.2.0.2/32")
+            }
+        }
+        if (!hasIpv6Address) {
+            runCatching {
+                builder.addAddress(InetAddress.getByName("fd00:1:1::2"), 64)
+                App.instance.tunnelManager.log("VPN_ROUTING", "Assigned default fallback IPv6: fd00:1:1::2/64")
+            }
+        }
+    }
+
+    private fun configureDnsServers(builder: Builder, dnsString: String) {
+        val dnsServers = dnsString.split(",").map { it.trim() }.filter { it.isNotBlank() }
+        if (dnsServers.isNotEmpty()) {
+            for (dns in dnsServers) {
+                runCatching {
+                    builder.addDnsServer(InetAddress.getByName(dns))
+                    App.instance.tunnelManager.log("VPN_ROUTING", "Configured DNS Server: $dns")
+                }
+            }
+        } else {
+            runCatching {
+                builder.addDnsServer(InetAddress.getByName("1.1.1.1"))
+                builder.addDnsServer(InetAddress.getByName("8.8.8.8"))
+                App.instance.tunnelManager.log("VPN_ROUTING", "Configured default DNS Servers: 1.1.1.1, 8.8.8.8")
+            }
+        }
+    }
+
+    private fun configureRoutes(builder: Builder, allowedIpsString: String) {
+        val routes = allowedIpsString.split(",").map { it.trim() }.filter { it.isNotBlank() }
+        if (routes.isEmpty() || routes.any { it == "0.0.0.0/0" }) {
+            runCatching {
+                builder.addRoute(InetAddress.getByName("0.0.0.0"), 0)
+                App.instance.tunnelManager.log("VPN_ROUTING", "Route Table: Added IPv4 default route 0.0.0.0/0 -> TUN")
+            }
+            runCatching {
+                builder.addRoute(InetAddress.getByName("::"), 0)
+                App.instance.tunnelManager.log("VPN_ROUTING", "Route Table: Added IPv6 default route ::/0 -> TUN")
+            }
+        } else {
+            for (cidr in routes) {
+                val parts = cidr.split("/")
+                if (parts.isNotEmpty()) {
+                    val ip = parts[0].trim()
+                    val mask = if (parts.size > 1) parts[1].trim().toIntOrNull() ?: if (ip.contains(":")) 64 else 32 else if (ip.contains(":")) 64 else 32
+                    runCatching {
+                        builder.addRoute(InetAddress.getByName(ip), mask)
+                        App.instance.tunnelManager.log("VPN_ROUTING", "Route Table: Added custom route $ip/$mask -> TUN")
+                    }
+                }
+            }
+        }
+    }
+
+    private fun applySplitTunneling(builder: Builder) {
+        val splitManager = App.instance.splitTunnelManager
+        val selectedApps = splitManager.getSelectedPackages()
+
+        when (splitManager.mode) {
+            SplitTunnelMode.ONLY_SELECTED_THROUGH_VPN -> {
+                App.instance.tunnelManager.log("VPN_ROUTING", "Split-Tunnel Policy: Whitelist (${selectedApps.size} apps routed via VPN)")
+                for (pkg in selectedApps) {
+                    runCatching {
+                        builder.addAllowedApplication(pkg)
+                        App.instance.tunnelManager.log("VPN_ROUTING", "  -> Allowed App: $pkg")
+                    }
+                }
+            }
+            SplitTunnelMode.ALL_EXCEPT_SELECTED -> {
+                App.instance.tunnelManager.log("VPN_ROUTING", "Split-Tunnel Policy: Blacklist (${selectedApps.size} apps bypassing VPN)")
+                for (pkg in selectedApps) {
+                    runCatching {
+                        builder.addDisallowedApplication(pkg)
+                        App.instance.tunnelManager.log("VPN_ROUTING", "  -> Bypassed App: $pkg")
+                    }
+                }
+            }
+            SplitTunnelMode.ALL_THROUGH_VPN -> {
+                App.instance.tunnelManager.log("VPN_ROUTING", "Split-Tunnel Policy: Full Tunnel (All device apps routed through VPN)")
+            }
+        }
+    }
+
+    private fun onTunnelEstablished(config: AwgConfig, fd: java.io.FileDescriptor) {
+        App.instance.tunnelManager.log("VPN_LIFECYCLE", "TUN interface established successfully! (Descriptor: $fd)")
+        updateNotification("Active: ${config.name} [Anti-DPI Guard]")
+
+        // Start User-space packet router with diagnostic inspection
+        packetRouter?.stop()
+        packetRouter = TunPacketRouter(
+            vpnService = this,
+            fileDescriptor = fd,
+            config = config,
+            onTrafficUpdate = { rx, tx ->
+                App.instance.tunnelManager.updateBytes(rx, tx)
+            }
+        )
+        packetRouter?.start()
+        App.instance.tunnelManager.log("VPN_ROUTING", "Packet router worker thread active, listening for TUN IPv4/IPv6 frames")
+
+        // Start Per-App traffic monitoring
+        App.instance.appTrafficTracker.startTracking()
+
+        // Mark VPN as CONNECTED
+        App.instance.tunnelManager.updateStatus(
+            VpnStatus(
+                state = VpnState.CONNECTED,
+                activeConfigName = config.name,
+                activeConfigId = config.id,
+                endpoint = config.endpoint,
+                connectedSince = System.currentTimeMillis()
+            )
+        )
+
+        // Perform real egress and internet exit reachability check in background
+        serviceScope.launch {
+            App.instance.tunnelManager.log("VPN_VERIFY", "Verifying egress public IP and tunnel connectivity...")
+            val egress = App.instance.networkEgressVerifier.verifyEgress()
+            val pingResult = App.instance.pingTester.testEndpoint(config.endpoint)
+
+            App.instance.tunnelManager.log(
+                "VPN_VERIFY",
+                "Egress probe completed: Public IP=${egress.publicIp ?: "N/A"}, Country=${egress.countryCode ?: "N/A"}, Latency=${egress.latencyMs ?: pingResult.latencyMs}ms, Functional=${egress.isFunctional}"
+            )
+
+            val current = App.instance.tunnelManager.status.value
+            if (current.state == VpnState.CONNECTED) {
+                App.instance.tunnelManager.updateStatus(
+                    current.copy(
+                        egressIp = egress.publicIp,
+                        egressCountry = egress.countryCode,
+                        isEgressVerified = egress.isFunctional,
+                        currentPingMs = egress.latencyMs ?: pingResult.latencyMs
+                    )
+                )
+                if (egress.isFunctional) {
+                    updateNotification("Connected: ${config.name} (${egress.publicIp ?: "Online"})")
+                }
+            }
         }
     }
 

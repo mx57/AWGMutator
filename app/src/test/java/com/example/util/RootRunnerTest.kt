@@ -33,6 +33,28 @@ class RootRunnerTest {
     }
 
     @Test
+    fun testEscapeArg() {
+        assertEquals("'simple'", RootRunner.escapeArg("simple"))
+        assertEquals("'hello world'", RootRunner.escapeArg("hello world"))
+        assertEquals("'it'\\''s fine'", RootRunner.escapeArg("it's fine"))
+        assertEquals("'; id;'", RootRunner.escapeArg("; id;"))
+        assertEquals("'\$(whoami)'", RootRunner.escapeArg("$(whoami)"))
+        assertEquals("'`id`'", RootRunner.escapeArg("`id`"))
+    }
+
+    @Test
+    fun testNewlineSanitizationPreventsInjection() = runBlocking {
+        // Attempting to inject extra commands via multiline string input
+        val maliciousArg = "1.1.1.1\necho INJECTED"
+        val escaped = RootRunner.escapeArg(maliciousArg)
+        val result = RootRunner.executeShell("sh", "echo $escaped")
+
+        assertTrue(result.isSuccess)
+        // Verify newline was converted to space and command injection did not execute as a separate command
+        assertEquals("1.1.1.1 echo INJECTED", result.stdout)
+    }
+
+    @Test
     fun testExecuteShellLargeOutputPerformance() = runBlocking {
         val startTime = System.currentTimeMillis()
         // Generate significant output to verify non-blocking stream handling
