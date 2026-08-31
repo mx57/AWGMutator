@@ -33,7 +33,8 @@ data class CachedAppMeta(
     val uid: Int,
     val packageName: String,
     val appName: String,
-    val isSystem: Boolean
+    val isSystem: Boolean,
+    val isLabelResolved: Boolean = false
 )
 
 /**
@@ -163,18 +164,17 @@ class AppTrafficTracker(
                 val pkg = appInfo.packageName ?: continue
                 if (pkg == context.packageName) continue
 
-                val appName = try {
-                    pm.getApplicationLabel(appInfo).toString()
-                } catch (_: Exception) {
-                    formatAppName(pkg)
-                }
+                val existing = appMetaCache[appInfo.uid]
+                if (existing != null && existing.isLabelResolved) continue
+
                 val isSystem = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
 
                 appMetaCache[appInfo.uid] = CachedAppMeta(
                     uid = appInfo.uid,
                     packageName = pkg,
-                    appName = if (appName.isNotBlank()) appName else formatAppName(pkg),
-                    isSystem = isSystem
+                    appName = existing?.appName ?: formatAppName(pkg),
+                    isSystem = isSystem,
+                    isLabelResolved = existing?.isLabelResolved ?: false
                 )
             }
         } catch (_: Exception) {
@@ -183,30 +183,33 @@ class AppTrafficTracker(
     }
 
     private fun resolveAppMeta(uid: Int): CachedAppMeta {
-        appMetaCache[uid]?.let { return it }
-
-        val pm = context.packageManager
-        val packages = try {
-            pm.getPackagesForUid(uid)
-        } catch (_: Exception) {
-            null
+        val cached = appMetaCache[uid]
+        if (cached != null && cached.isLabelResolved) {
+            return cached
         }
 
-        val pkgName = packages?.firstOrNull() ?: "uid.$uid"
+        val pm = context.packageManager
+        val pkgName = cached?.packageName ?: try {
+            pm.getPackagesForUid(uid)?.firstOrNull() ?: "uid.$uid"
+        } catch (_: Exception) {
+            "uid.$uid"
+        }
+
         val (appName, isSystem) = try {
             val appInfo = pm.getApplicationInfo(pkgName, 0)
             val label = pm.getApplicationLabel(appInfo).toString()
             val system = (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
             Pair(if (label.isNotBlank()) label else formatAppName(pkgName), system)
         } catch (_: Exception) {
-            Pair(formatAppName(pkgName), false)
+            Pair(cached?.appName ?: formatAppName(pkgName), cached?.isSystem ?: false)
         }
 
         val meta = CachedAppMeta(
             uid = uid,
             packageName = pkgName,
             appName = appName,
-            isSystem = isSystem
+            isSystem = isSystem,
+            isLabelResolved = true
         )
         appMetaCache[uid] = meta
         return meta
