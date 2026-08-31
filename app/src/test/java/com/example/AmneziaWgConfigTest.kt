@@ -200,4 +200,19 @@ class AmneziaWgConfigTest {
         assertEquals(50, config.jmin)
         assertEquals(100, config.jmax)
     }
+
+    @Test
+    fun testSanitizeConfigNameInjectedNewlinesAndControlCharacters() {
+        val maliciousInput = "Test\r\n[Injected Log Header]\nName\u0000Special\t"
+        val sanitized = ConfigParser.sanitizeConfigName(maliciousInput)
+        assertEquals("Test[Injected Log Header]NameSpecial", sanitized)
+
+        val nullInputSanitized = ConfigParser.sanitizeConfigName(null, "Fallback Tunnel")
+        assertEquals("Fallback Tunnel", nullInputSanitized)
+
+        val longInput = "A".repeat(150)
+        val truncated = ConfigParser.sanitizeConfigName(longInput)
+        assertEquals(100, truncated.length)
+        assertEquals("A".repeat(100), truncated)
+    }
 }
