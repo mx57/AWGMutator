@@ -14,19 +14,15 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.AltRoute
 import androidx.compose.material.icons.filled.BugReport
-import androidx.compose.material.icons.filled.CheckCircle
 import androidx.compose.material.icons.filled.ContentCopy
 import androidx.compose.material.icons.filled.DeveloperMode
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -65,6 +61,8 @@ import com.example.App
 import com.example.ui.theme.CyberCyan
 import com.example.ui.theme.CyberPurple
 import com.example.ui.theme.NeonGreen
+import com.example.domain.model.AppTrafficStat
+import com.example.vpn.InstalledApp
 import com.example.vpn.SplitTunnelMode
 import kotlinx.coroutines.launch
 
@@ -122,110 +120,27 @@ fun SettingsScreen(
 
         Spacer(modifier = Modifier.height(14.dp))
 
-        // Root Tunneling Settings Card
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(14.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
-        ) {
-            Column(modifier = Modifier.padding(14.dp)) {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
-                        Icon(Icons.Default.DeveloperMode, contentDescription = null, tint = CyberCyan)
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Column {
-                            Text(
-                                text = "Root Tunnel Mode",
-                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
-                            )
-                            Text(
-                                text = if (uiState.isRootDeviceAvailable) "SU Access Available" else "No Root / SU Access detected",
-                                style = MaterialTheme.typography.labelSmall,
-                                color = if (uiState.isRootDeviceAvailable) NeonGreen else MaterialTheme.colorScheme.error
-                            )
-                        }
-                    }
-                    Switch(
-                        checked = uiState.isRootModeEnabled,
-                        onCheckedChange = { viewModel.setRootModeEnabled(it) },
-                        colors = SwitchDefaults.colors(
-                            checkedThumbColor = CyberCyan,
-                            checkedTrackColor = CyberPurple
-                        )
-                    )
-                }
-            }
-        }
+        RootTunnelCard(
+            isRootDeviceAvailable = uiState.isRootDeviceAvailable,
+            isRootModeEnabled = uiState.isRootModeEnabled,
+            onRootModeChange = { viewModel.setRootModeEnabled(it) }
+        )
 
         Spacer(modifier = Modifier.height(14.dp))
 
-        // Split Tunneling Mode Card
-        Card(
-            modifier = Modifier.fillMaxWidth(),
-            shape = RoundedCornerShape(14.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-            border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
-        ) {
-            Column(modifier = Modifier.padding(14.dp)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Icon(Icons.AutoMirrored.Filled.AltRoute, contentDescription = null, tint = CyberCyan)
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = "Split Tunneling Mode",
-                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(10.dp))
-
-                SplitOptionRow(
-                    title = "Route All Apps (Full Tunnel)",
-                    selected = uiState.splitMode == SplitTunnelMode.ALL_THROUGH_VPN,
-                    onClick = { viewModel.setSplitMode(SplitTunnelMode.ALL_THROUGH_VPN) }
-                )
-
-                SplitOptionRow(
-                    title = "Only Selected Apps through VPN (Whitelist)",
-                    selected = uiState.splitMode == SplitTunnelMode.ONLY_SELECTED_THROUGH_VPN,
-                    onClick = { viewModel.setSplitMode(SplitTunnelMode.ONLY_SELECTED_THROUGH_VPN) }
-                )
-
-                SplitOptionRow(
-                    title = "All Except Selected Apps (Bypass VPN)",
-                    selected = uiState.splitMode == SplitTunnelMode.ALL_EXCEPT_SELECTED,
-                    onClick = { viewModel.setSplitMode(SplitTunnelMode.ALL_EXCEPT_SELECTED) }
-                )
-            }
-        }
+        SplitTunnelCard(
+            splitMode = uiState.splitMode,
+            onSplitModeChange = { viewModel.setSplitMode(it) }
+        )
 
         if (uiState.splitMode != SplitTunnelMode.ALL_THROUGH_VPN) {
             Spacer(modifier = Modifier.height(12.dp))
 
-            // App Filter & Selector
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
-                OutlinedTextField(
-                    value = uiState.searchQuery,
-                    onValueChange = { viewModel.setSearchQuery(it) },
-                    placeholder = { Text("Search installed applications...") },
-                    leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
-                    modifier = Modifier
-                        .weight(1f)
-                        .testTag("app_search_field"),
-                    singleLine = true
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                IconButton(onClick = { viewModel.loadInstalledApps() }) {
-                    Icon(Icons.Default.Refresh, contentDescription = "Refresh Apps")
-                }
-            }
+            AppSearchBar(
+                searchQuery = uiState.searchQuery,
+                onSearchQueryChange = { viewModel.setSearchQuery(it) },
+                onRefreshClick = { viewModel.loadInstalledApps() }
+            )
 
             Spacer(modifier = Modifier.height(8.dp))
 
@@ -254,157 +169,300 @@ fun SettingsScreen(
                             SplitTunnelMode.ALL_EXCEPT_SELECTED -> !isChecked
                         }
 
-                        Card(
-                            modifier = Modifier.fillMaxWidth(),
-                            shape = RoundedCornerShape(8.dp),
-                            colors = CardDefaults.cardColors(
-                                containerColor = if (isRouted) CyberCyan.copy(alpha = 0.08f) else MaterialTheme.colorScheme.surface
-                            )
-                        ) {
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .padding(horizontal = 10.dp, vertical = 6.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.SpaceBetween
-                            ) {
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Row(verticalAlignment = Alignment.CenterVertically) {
-                                        Text(
-                                            text = app.appName,
-                                            style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis
-                                        )
-                                        Spacer(modifier = Modifier.width(6.dp))
-                                        Surface(
-                                            shape = RoundedCornerShape(4.dp),
-                                            color = if (isRouted) NeonGreen.copy(alpha = 0.15f) else CyberPurple.copy(alpha = 0.15f)
-                                        ) {
-                                            Text(
-                                                text = if (isRouted) "Config Tunnel" else "Direct ISP",
-                                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                                color = if (isRouted) NeonGreen else CyberPurple,
-                                                modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
-                                            )
-                                        }
-                                    }
-
-                                    Row(
-                                        verticalAlignment = Alignment.CenterVertically,
-                                        horizontalArrangement = Arrangement.spacedBy(8.dp)
-                                    ) {
-                                        Text(
-                                            text = app.packageName,
-                                            style = MaterialTheme.typography.labelSmall,
-                                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                            maxLines = 1,
-                                            overflow = TextOverflow.Ellipsis,
-                                            modifier = Modifier.weight(1f, fill = false)
-                                        )
-                                        if (stat != null && stat.totalBytes > 0) {
-                                            Text(
-                                                text = "• ${formatSettingsBytes(stat.totalBytes)}",
-                                                style = MaterialTheme.typography.labelSmall,
-                                                color = NeonGreen
-                                            )
-                                        }
-                                    }
-                                }
-                                Checkbox(
-                                    checked = isChecked,
-                                    onCheckedChange = { viewModel.toggleApp(app.packageName) },
-                                    colors = CheckboxDefaults.colors(checkedColor = CyberCyan)
-                                )
-                            }
-                        }
+                        AppItemCard(
+                            app = app,
+                            isChecked = isChecked,
+                            isRouted = isRouted,
+                            stat = stat,
+                            onToggleApp = { viewModel.toggleApp(app.packageName) }
+                        )
                     }
                 }
             }
         } else {
             Spacer(modifier = Modifier.height(14.dp))
-            // About & Protocol Card
-            Card(
+
+            ObfuscationSpecsCard()
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            DiagnosticLogsCard(snackbarHostState = snackbarHostState)
+        }
+    }
+}
+
+@Composable
+private fun RootTunnelCard(
+    isRootDeviceAvailable: Boolean,
+    isRootModeEnabled: Boolean,
+    onRootModeChange: (Boolean) -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(14.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
             ) {
-                Column(modifier = Modifier.padding(14.dp)) {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        Icon(Icons.Default.Info, contentDescription = null, tint = CyberPurple)
-                        Spacer(modifier = Modifier.width(8.dp))
+                Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                    Icon(Icons.Default.DeveloperMode, contentDescription = null, tint = CyberCyan)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Column {
                         Text(
-                            text = "AmneziaWG 2.0 Obfuscation Specs",
+                            text = "Root Tunnel Mode",
                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
                         )
+                        Text(
+                            text = if (isRootDeviceAvailable) "SU Access Available" else "No Root / SU Access detected",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = if (isRootDeviceAvailable) NeonGreen else MaterialTheme.colorScheme.error
+                        )
                     }
+                }
+                Switch(
+                    checked = isRootModeEnabled,
+                    onCheckedChange = onRootModeChange,
+                    colors = SwitchDefaults.colors(
+                        checkedThumbColor = CyberCyan,
+                        checkedTrackColor = CyberPurple
+                    )
+                )
+            }
+        }
+    }
+}
 
-                    Spacer(modifier = Modifier.height(8.dp))
+@Composable
+private fun SplitTunnelCard(
+    splitMode: SplitTunnelMode,
+    onSplitModeChange: (SplitTunnelMode) -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.AutoMirrored.Filled.AltRoute, contentDescription = null, tint = CyberCyan)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "Split Tunneling Mode",
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            SplitOptionRow(
+                title = "Route All Apps (Full Tunnel)",
+                selected = splitMode == SplitTunnelMode.ALL_THROUGH_VPN,
+                onClick = { onSplitModeChange(SplitTunnelMode.ALL_THROUGH_VPN) }
+            )
+
+            SplitOptionRow(
+                title = "Only Selected Apps through VPN (Whitelist)",
+                selected = splitMode == SplitTunnelMode.ONLY_SELECTED_THROUGH_VPN,
+                onClick = { onSplitModeChange(SplitTunnelMode.ONLY_SELECTED_THROUGH_VPN) }
+            )
+
+            SplitOptionRow(
+                title = "All Except Selected Apps (Bypass VPN)",
+                selected = splitMode == SplitTunnelMode.ALL_EXCEPT_SELECTED,
+                onClick = { onSplitModeChange(SplitTunnelMode.ALL_EXCEPT_SELECTED) }
+            )
+        }
+    }
+}
+
+@Composable
+private fun AppSearchBar(
+    searchQuery: String,
+    onSearchQueryChange: (String) -> Unit,
+    onRefreshClick: () -> Unit
+) {
+    Row(
+        modifier = Modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        OutlinedTextField(
+            value = searchQuery,
+            onValueChange = onSearchQueryChange,
+            placeholder = { Text("Search installed applications...") },
+            leadingIcon = { Icon(Icons.Default.Search, contentDescription = null) },
+            modifier = Modifier
+                .weight(1f)
+                .testTag("app_search_field"),
+            singleLine = true
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        IconButton(onClick = onRefreshClick) {
+            Icon(Icons.Default.Refresh, contentDescription = "Refresh Apps")
+        }
+    }
+}
+
+@Composable
+private fun AppItemCard(
+    app: InstalledApp,
+    isChecked: Boolean,
+    isRouted: Boolean,
+    stat: AppTrafficStat?,
+    onToggleApp: () -> Unit
+) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(8.dp),
+        colors = CardDefaults.cardColors(
+            containerColor = if (isRouted) CyberCyan.copy(alpha = 0.08f) else MaterialTheme.colorScheme.surface
+        )
+    ) {
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 10.dp, vertical = 6.dp),
+            verticalAlignment = Alignment.CenterVertically,
+            horizontalArrangement = Arrangement.SpaceBetween
+        ) {
+            Column(modifier = Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = "• S1–S4: Random dynamic prefixes for handshake packets\n" +
-                                "• Jc, Jmin, Jmax: Junk packet padding to defeat Deep Packet Inspection (DPI)\n" +
-                                "• H1–H4: Dynamic headers replacing standard WireGuard protocol signatures\n" +
-                                "• Cloudflare WARP: X25519 automated client provisioning with reserved byte routing",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                        text = app.appName,
+                        style = MaterialTheme.typography.bodyMedium.copy(fontWeight = FontWeight.Medium),
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Surface(
+                        shape = RoundedCornerShape(4.dp),
+                        color = if (isRouted) NeonGreen.copy(alpha = 0.15f) else CyberPurple.copy(alpha = 0.15f)
+                    ) {
+                        Text(
+                            text = if (isRouted) "Config Tunnel" else "Direct ISP",
+                            style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                            color = if (isRouted) NeonGreen else CyberPurple,
+                            modifier = Modifier.padding(horizontal = 4.dp, vertical = 1.dp)
+                        )
+                    }
+                }
+
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(8.dp)
+                ) {
+                    Text(
+                        text = app.packageName,
+                        style = MaterialTheme.typography.labelSmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false)
+                    )
+                    if (stat != null && stat.totalBytes > 0) {
+                        Text(
+                            text = "• ${formatSettingsBytes(stat.totalBytes)}",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = NeonGreen
+                        )
+                    }
+                }
+            }
+            Checkbox(
+                checked = isChecked,
+                onCheckedChange = { onToggleApp() },
+                colors = CheckboxDefaults.colors(checkedColor = CyberCyan)
+            )
+        }
+    }
+}
+
+@Composable
+private fun ObfuscationSpecsCard() {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+    ) {
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Info, contentDescription = null, tint = CyberPurple)
+                Spacer(modifier = Modifier.width(8.dp))
+                Text(
+                    text = "AmneziaWG 2.0 Obfuscation Specs",
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "• S1–S4: Random dynamic prefixes for handshake packets\n" +
+                        "• Jc, Jmin, Jmax: Junk packet padding to defeat Deep Packet Inspection (DPI)\n" +
+                        "• H1–H4: Dynamic headers replacing standard WireGuard protocol signatures\n" +
+                        "• Cloudflare WARP: X25519 automated client provisioning with reserved byte routing",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+}
+
+@Composable
+private fun DiagnosticLogsCard(snackbarHostState: SnackbarHostState) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(12.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+    ) {
+        val clipboardManager = LocalClipboardManager.current
+        val scope = rememberCoroutineScope()
+
+        Column(modifier = Modifier.padding(14.dp)) {
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.BugReport, contentDescription = null, tint = CyberCyan)
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Отладка и логирование туннеля",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
                     )
                 }
             }
 
-            Spacer(modifier = Modifier.height(12.dp))
+            Spacer(modifier = Modifier.height(8.dp))
+            Text(
+                text = "Полный лог событий нативного движка WireGuard, handshake-пакетов, ошибок подключения и информации об устройстве.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
 
-            // Diagnostic Logs & Device Details Card
-            Card(
+            Spacer(modifier = Modifier.height(10.dp))
+            Button(
+                onClick = {
+                    val fullLog = App.instance.tunnelManager.getFormattedFullLogText()
+                    clipboardManager.setText(AnnotatedString(fullLog))
+                    scope.launch {
+                        snackbarHostState.showSnackbar("📋 Полный диагностический лог скопирован в буфер обмена!")
+                    }
+                },
                 modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(12.dp),
-                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
-                border = BorderStroke(1.dp, MaterialTheme.colorScheme.outline)
+                colors = ButtonDefaults.buttonColors(containerColor = CyberCyan, contentColor = Color.Black),
+                shape = RoundedCornerShape(8.dp)
             ) {
-                val clipboardManager = androidx.compose.ui.platform.LocalClipboardManager.current
-                val scope = androidx.compose.runtime.rememberCoroutineScope()
-
-                Column(modifier = Modifier.padding(14.dp)) {
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        verticalAlignment = Alignment.CenterVertically,
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Default.BugReport, contentDescription = null, tint = CyberCyan)
-                            Spacer(modifier = Modifier.width(8.dp))
-                            Text(
-                                text = "Отладка и логирование туннеля",
-                                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold)
-                            )
-                        }
-                    }
-
-                    Spacer(modifier = Modifier.height(8.dp))
-                    Text(
-                        text = "Полный лог событий нативного движка WireGuard, handshake-пакетов, ошибок подключения и информации об устройстве.",
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant
-                    )
-
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Button(
-                        onClick = {
-                            val fullLog = com.example.App.instance.tunnelManager.getFormattedFullLogText()
-                            clipboardManager.setText(androidx.compose.ui.text.AnnotatedString(fullLog))
-                            scope.launch {
-                                snackbarHostState.showSnackbar("📋 Полный диагностический лог скопирован в буфер обмена!")
-                            }
-                        },
-                        modifier = Modifier.fillMaxWidth(),
-                        colors = ButtonDefaults.buttonColors(containerColor = CyberCyan, contentColor = Color.Black),
-                        shape = RoundedCornerShape(8.dp)
-                    ) {
-                        Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
-                        Spacer(modifier = Modifier.width(8.dp))
-                        Text("Скопировать полный отчет с логами", fontWeight = FontWeight.Bold)
-                    }
-                }
+                Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(18.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Скопировать полный отчет с логами", fontWeight = FontWeight.Bold)
             }
         }
     }
