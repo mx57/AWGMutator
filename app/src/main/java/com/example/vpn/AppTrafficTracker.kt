@@ -187,8 +187,9 @@ class AppTrafficTracker(
         val pkgName = try {
             pm.getPackagesForUid(uid)?.firstOrNull() ?: "uid.$uid"
         } catch (_: Exception) {
-            "uid.$uid"
+            null
         }
+
         val isSystem = try {
             val appInfo = pm.getApplicationInfo(pkgName, 0)
             (appInfo.flags and ApplicationInfo.FLAG_SYSTEM) != 0
