@@ -38,18 +38,18 @@ object EndpointCatalog {
 
     val preconfiguredEndpoints: List<EndpointItem> = listOf(
         // High-priority tested & working clean Anycast bypass endpoints (EU-Anycast & Alternate Ports)
-        EndpointItem("ep_ru_bypass_1", "188.114.97.1", 854, "ALL", "Global Anycast", "🌍", "CF Anycast Port 854 (Clean)"),
-        EndpointItem("ep_ru_bypass_2", "188.114.96.1", 1074, "ALL", "Global Anycast", "🌍", "CF Anycast Port 1074 (Clean)"),
-        EndpointItem("ep_ru_bypass_3", "162.159.193.1", 2408, "ALL", "Global Anycast", "🌍", "CF Standard Port 2408"),
-        EndpointItem("ep_ru_bypass_4", "162.159.192.1", 2408, "ALL", "Global Anycast", "🌍", "CF Standard Port 2408"),
-        EndpointItem("ep_ru_bypass_5", "162.159.195.1", 1074, "ALL", "Global Anycast", "🌍", "CF Bypass Port 1074"),
-        EndpointItem("ep_ru_bypass_6", "188.114.98.1", 4500, "ALL", "Global Anycast", "🌍", "CF NAT-T Port 4500 (Clean)"),
+        EndpointItem("ep_ru_bypass_1", "188.114.96.1", 1074, "ALL", "Global Anycast", "🌍", "CF Anycast Port 1074 (Clean High-Speed)"),
+        EndpointItem("ep_ru_bypass_2", "188.114.96.60", 894, "ALL", "Global Anycast", "🌍", "CF Edge Port 894 (Clean)"),
+        EndpointItem("ep_ru_bypass_3", "188.114.98.1", 4500, "ALL", "Global Anycast", "🌍", "CF NAT-T Port 4500 (Clean)"),
+        EndpointItem("ep_ru_bypass_4", "188.114.97.35", 859, "ALL", "Global Anycast", "🌍", "CF Edge Port 859 (Clean)"),
+        EndpointItem("ep_ru_bypass_5", "188.114.98.45", 878, "ALL", "Global Anycast", "🌍", "CF Edge Port 878 (Clean)"),
+        EndpointItem("ep_ru_bypass_6", "188.114.99.100", 903, "ALL", "Global Anycast", "🌍", "CF Edge Port 903 (Clean)"),
         EndpointItem("ep_ru_bypass_7", "188.114.99.1", 500, "ALL", "Global Anycast", "🌍", "CF IPsec Port 500 (Clean)"),
-        EndpointItem("ep_ru_bypass_8", "188.114.97.35", 859, "ALL", "Global Anycast", "🌍", "CF Edge Port 859 (Clean)"),
-        EndpointItem("ep_ru_bypass_9", "188.114.96.60", 894, "ALL", "Global Anycast", "🌍", "CF Edge Port 894 (Clean)"),
-        EndpointItem("ep_ru_bypass_10", "188.114.98.45", 878, "ALL", "Global Anycast", "🌍", "CF Edge Port 878 (Clean)"),
-        EndpointItem("ep_ru_bypass_11", "188.114.99.100", 903, "ALL", "Global Anycast", "🌍", "CF Edge Port 903 (Clean)"),
-        EndpointItem("ep_ru_bypass_12", "188.114.97.150", 908, "ALL", "Global Anycast", "🌍", "CF Edge Port 908 (Clean)"),
+        EndpointItem("ep_ru_bypass_8", "188.114.97.1", 854, "ALL", "Global Anycast", "🌍", "CF Anycast Port 854 (Clean)"),
+        EndpointItem("ep_ru_bypass_9", "188.114.97.150", 908, "ALL", "Global Anycast", "🌍", "CF Edge Port 908 (Clean)"),
+        EndpointItem("ep_ru_bypass_10", "162.159.195.1", 1074, "ALL", "Global Anycast", "🌍", "CF Bypass Port 1074"),
+        EndpointItem("ep_ru_bypass_11", "162.159.193.1", 2408, "ALL", "Global Anycast", "🌍", "CF Standard Port 2408"),
+        EndpointItem("ep_ru_bypass_12", "162.159.192.1", 2408, "ALL", "Global Anycast", "🌍", "CF Standard Port 2408"),
 
         // Germany 🇩🇪
         EndpointItem("ep_de_1", "188.114.97.10", 1074, "DE", "Germany", "🇩🇪", "Frankfurt Edge (188.114.97.10)"),
