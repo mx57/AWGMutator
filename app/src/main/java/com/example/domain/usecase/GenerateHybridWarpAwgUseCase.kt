@@ -3,7 +3,6 @@ package com.example.domain.usecase
 import com.example.data.remote.CloudflareApi
 import com.example.domain.model.AwgConfig
 import com.example.domain.repository.ConfigRepository
-import java.util.Random
 
 /**
  * Creates a Hybrid Cloudflare WARP + AmneziaWG profile with active obfuscation headers
@@ -13,8 +12,6 @@ class GenerateHybridWarpAwgUseCase(
     private val cloudflareApi: CloudflareApi,
     private val configRepository: ConfigRepository
 ) {
-    private val random = Random()
-
     suspend operator fun invoke(
         customName: String = "WARP + AmneziaWG Anti-DPI",
         licenseKey: String? = null,
