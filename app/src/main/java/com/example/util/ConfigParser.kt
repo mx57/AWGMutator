@@ -205,13 +205,10 @@ object ConfigParser {
 
     private fun applyDefaults(data: ParsedConfigData, isCloudflareWarp: Boolean) {
         if (isCloudflareWarp) {
-            val warpH1 = AwgConfig.calculateWarpH1(data.reserved)
-            if (data.h1 == 0L) {
-                data.h1 = if (warpH1 != 1L) warpH1 else 1L
-            }
-            if (data.h2 == 0L) data.h2 = 2L
-            if (data.h3 == 0L) data.h3 = 3L
-            if (data.h4 == 0L) data.h4 = 4L
+            data.h1 = 1L
+            data.h2 = 2L
+            data.h3 = 3L
+            data.h4 = 4L
 
             data.s1 = 0
             data.s2 = 0
@@ -222,18 +219,25 @@ object ConfigParser {
             data.i3 = null
             data.i4 = null
 
-            if (data.jc == 0) {
-                data.jc = 4
-                data.jmin = 40
-                data.jmax = 70
-            }
+            data.jc = 0
+            data.jmin = 0
+            data.jmax = 0
             if (data.mtu == 0) data.mtu = 1280
 
-            if (data.dns.isBlank() || data.dns.contains("0.0.0.0")) {
+            if (data.allowedIps.isBlank() || (!data.allowedIps.contains("0.0.0.0") && data.allowedIps.split(",").size > 10)) {
+                // If it was split tunnel list or blank, ensure default 0.0.0.0/0
+                data.allowedIps = "0.0.0.0/0, ::/0"
+            }
+
+            if (data.dns.isBlank() || data.dns.contains("0.0.0.0") || data.dns.contains("111.88.")) {
                 data.dns = "1.1.1.1, 1.0.0.1, 8.8.8.8"
             }
         } else {
             // For private AmneziaWG servers
+            if (data.h1 == 0L) data.h1 = 1L
+            if (data.h2 == 0L) data.h2 = 2L
+            if (data.h3 == 0L) data.h3 = 3L
+            if (data.h4 == 0L) data.h4 = 4L
             if (data.dns.isBlank() || data.dns.contains("0.0.0.0")) {
                 data.dns = "1.1.1.1, 8.8.8.8"
             }

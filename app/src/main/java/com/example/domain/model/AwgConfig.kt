@@ -92,15 +92,14 @@ data class AwgConfig(
             if (s4 > 0) builder.appendLine("S4 = $s4")
         }
 
-        val effectiveH1 = if ((isCloudflareWarpPeer || !reserved.isNullOrBlank()) && h1 <= 4L) {
-            val calc = calculateWarpH1(reserved)
-            if (calc != 1L) calc else h1
+        val effectiveH1 = if (isCloudflareWarpPeer) {
+            1L
         } else {
-            h1
+            if (h1 > 0L) h1 else 1L
         }
-        val effectiveH2 = h2
-        val effectiveH3 = h3
-        val effectiveH4 = h4
+        val effectiveH2 = if (isCloudflareWarpPeer) 2L else if (h2 > 0L) h2 else 2L
+        val effectiveH3 = if (isCloudflareWarpPeer) 3L else if (h3 > 0L) h3 else 3L
+        val effectiveH4 = if (isCloudflareWarpPeer) 4L else if (h4 > 0L) h4 else 4L
 
         if (effectiveH1 > 0L) builder.appendLine("H1 = $effectiveH1")
         if (effectiveH2 > 0L) builder.appendLine("H2 = $effectiveH2")

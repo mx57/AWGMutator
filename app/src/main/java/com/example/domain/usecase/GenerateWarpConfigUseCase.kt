@@ -27,21 +27,21 @@ class GenerateWarpConfigUseCase(
             if (!endpoint.isNullOrBlank()) {
                 awgConfig = awgConfig.copy(endpoint = endpoint)
             }
-            val warpH1 = AwgConfig.calculateWarpH1(awgConfig.reserved)
             awgConfig = awgConfig.copy(
                 dns = dns,
                 mtu = mtu,
-                jc = 4,
-                jmin = 40,
-                jmax = 70,
+                jc = 0,
+                jmin = 0,
+                jmax = 0,
                 s1 = 0,
                 s2 = 0,
                 s3 = 0,
                 s4 = 0,
-                h1 = warpH1,
+                h1 = 1L,
                 h2 = 2L,
                 h3 = 3L,
                 h4 = 4L,
+                allowedIps = "0.0.0.0/0, ::/0",
                 originType = "WARP",
                 createdAt = System.currentTimeMillis()
             )

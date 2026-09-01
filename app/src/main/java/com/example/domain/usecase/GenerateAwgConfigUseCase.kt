@@ -72,6 +72,13 @@ class GenerateAwgConfigUseCase(
 
             val i1 = generateI1Noise(preset, customI1)
 
+            val isCloudflareWarpPeer = isWarp || effectivePeerKey.trim() == "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo="
+            val effectiveH1 = if (isCloudflareWarpPeer) 1L else obfuscation.h1
+            val effectiveH2 = if (isCloudflareWarpPeer) 2L else obfuscation.h2
+            val effectiveH3 = if (isCloudflareWarpPeer) 3L else obfuscation.h3
+            val effectiveH4 = if (isCloudflareWarpPeer) 4L else obfuscation.h4
+            val effectiveJc = if (isCloudflareWarpPeer) 0 else obfuscation.jc.coerceIn(0, 10)
+
             val config = AwgConfig(
                 id = UUID.randomUUID().toString(),
                 name = name,
@@ -79,24 +86,24 @@ class GenerateAwgConfigUseCase(
                 address = address,
                 dns = dns,
                 mtu = mtu.coerceIn(1280, 1420),
-                jc = obfuscation.jc.coerceIn(0, 10),
-                jmin = obfuscation.jmin.coerceIn(0, 1024),
-                jmax = obfuscation.jmax.coerceIn(obfuscation.jmin.coerceIn(0, 1024), 1024),
-                s1 = obfuscation.s1.coerceIn(0, 64),
-                s2 = obfuscation.s2.coerceIn(0, 64),
-                s3 = obfuscation.s3.coerceIn(0, 64),
-                s4 = obfuscation.s4.coerceIn(0, 32),
-                h1 = obfuscation.h1,
-                h2 = obfuscation.h2,
-                h3 = obfuscation.h3,
-                h4 = obfuscation.h4,
-                i1 = i1,
+                jc = effectiveJc,
+                jmin = if (isCloudflareWarpPeer) 0 else obfuscation.jmin.coerceIn(0, 1024),
+                jmax = if (isCloudflareWarpPeer) 0 else obfuscation.jmax.coerceIn(obfuscation.jmin.coerceIn(0, 1024), 1024),
+                s1 = if (isCloudflareWarpPeer) 0 else obfuscation.s1.coerceIn(0, 64),
+                s2 = if (isCloudflareWarpPeer) 0 else obfuscation.s2.coerceIn(0, 64),
+                s3 = if (isCloudflareWarpPeer) 0 else obfuscation.s3.coerceIn(0, 64),
+                s4 = if (isCloudflareWarpPeer) 0 else obfuscation.s4.coerceIn(0, 32),
+                h1 = effectiveH1,
+                h2 = effectiveH2,
+                h3 = effectiveH3,
+                h4 = effectiveH4,
+                i1 = if (isCloudflareWarpPeer) null else i1,
                 sni = customSni,
                 peerPublicKey = effectivePeerKey,
                 presharedKey = presharedKey,
                 endpoint = endpoint,
                 persistentKeepalive = 25,
-                isWarp = isWarp,
+                isWarp = isCloudflareWarpPeer,
                 reserved = reserved,
                 originType = "MANUAL",
                 createdAt = System.currentTimeMillis()

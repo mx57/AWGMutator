@@ -22,22 +22,22 @@ class GenerateHybridWarpAwgUseCase(
             val warpConfig = warpResult.getOrThrow()
             val baseAwg = warpConfig.toAwgConfig(customName)
 
-            val warpH1 = AwgConfig.calculateWarpH1(baseAwg.reserved)
             val hybrid = baseAwg.copy(
                 dns = dns,
                 endpoint = baseAwg.endpoint.ifBlank { "188.114.97.1:854" },
                 mtu = 1280,
-                jc = 5,
-                jmin = 40,
-                jmax = 80,
+                jc = 0,
+                jmin = 0,
+                jmax = 0,
                 s1 = 0,
                 s2 = 0,
                 s3 = 0,
                 s4 = 0,
-                h1 = warpH1,
+                h1 = 1L,
                 h2 = 2L,
                 h3 = 3L,
                 h4 = 4L,
+                allowedIps = "0.0.0.0/0, ::/0",
                 originType = "WARP_ANTI_DPI",
                 createdAt = System.currentTimeMillis()
             )
