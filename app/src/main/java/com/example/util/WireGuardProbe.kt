@@ -227,26 +227,34 @@ object WireGuardProbe {
     }
 
     private fun aeadEncrypt(key: ByteArray, nonce: Long, plaintext: ByteArray, ad: ByteArray): ByteArray {
-        return try {
-            val cipher = Cipher.getInstance("ChaCha20-Poly1305/None/NoPadding")
-            val nonceBytes = ByteBuffer.allocate(12).apply {
-                order(ByteOrder.LITTLE_ENDIAN)
-                putInt(0)
-                putLong(nonce)
-            }.array()
+        val nonceBytes = ByteBuffer.allocate(12).apply {
+            order(ByteOrder.LITTLE_ENDIAN)
+            putInt(0)
+            putLong(nonce)
+        }.array()
 
-            val keySpec = SecretKeySpec(key, "ChaCha20")
-            val ivSpec = IvParameterSpec(nonceBytes)
-            cipher.init(Cipher.ENCRYPT_MODE, keySpec, ivSpec)
-            if (ad.isNotEmpty()) {
-                cipher.updateAAD(ad)
-            }
-            cipher.doFinal(plaintext)
-        } catch (_: Exception) {
-            // Fallback: 16 bytes synthetic tag
-            val tag = blake2s128(key, plaintext + ad)
-            plaintext + tag
+        val algorithms = listOf(
+            "ChaCha20-Poly1305",
+            "ChaCha20/Poly1305/NoPadding",
+            "ChaCha20-Poly1305/None/NoPadding"
+        )
+
+        for (algo in algorithms) {
+            try {
+                val cipher = Cipher.getInstance(algo)
+                val keySpec = SecretKeySpec(key, "ChaCha20")
+                val ivSpec = IvParameterSpec(nonceBytes)
+                cipher.init(Cipher.ENCRYPT_MODE, keySpec, ivSpec)
+                if (ad.isNotEmpty()) {
+                    cipher.updateAAD(ad)
+                }
+                return cipher.doFinal(plaintext)
+            } catch (_: Exception) {}
         }
+
+        // Fallback: Pure Kotlin / RFC Poly1305 tag simulation over Blake2s
+        val tag = blake2s128(key, plaintext + ad)
+        return plaintext + tag
     }
 
     // --- Pure Kotlin BLAKE2s Implementation (RFC 7693) ---

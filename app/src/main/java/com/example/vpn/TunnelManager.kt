@@ -205,48 +205,44 @@ class TunnelManager(private val context: Context) {
     }
 
     private fun prepareConfig(rawConfig: AwgConfig): Pair<AwgConfig, Boolean> {
-        val isCloudflareWarp = rawConfig.peerPublicKey.trim() == "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=" ||
-                rawConfig.isWarp
-
-        if (!isCloudflareWarp) {
-            return Pair(rawConfig, false)
-        }
+        val isCloudflareWarp = rawConfig.isWarp || !rawConfig.reserved.isNullOrBlank()
 
         var cleanDns = rawConfig.dns
         if (cleanDns.isBlank() || cleanDns.contains("0.0.0.0")) {
             cleanDns = "1.1.1.1, 1.0.0.1, 8.8.8.8"
         }
 
-        val cleanAllowedIps = if (rawConfig.allowedIps.isBlank() || !rawConfig.allowedIps.contains("0.0.0.0")) {
-            "0.0.0.0/0, ::/0"
+        val cleanAllowedIps = rawConfig.allowedIps.ifBlank { "0.0.0.0/0, ::/0" }
+
+        val warpH1 = if (!rawConfig.reserved.isNullOrBlank() && (rawConfig.h1 == 0L || rawConfig.h1 == 1L)) {
+            AwgConfig.calculateWarpH1(rawConfig.reserved)
         } else {
-            rawConfig.allowedIps
+            if (rawConfig.h1 > 0L) rawConfig.h1 else 1L
         }
 
-        val warpH1 = AwgConfig.calculateWarpH1(rawConfig.reserved)
         val preparedConfig = rawConfig.copy(
             h1 = warpH1,
             h2 = if (rawConfig.h2 > 0L) rawConfig.h2 else 2L,
             h3 = if (rawConfig.h3 > 0L) rawConfig.h3 else 3L,
             h4 = if (rawConfig.h4 > 0L) rawConfig.h4 else 4L,
-            jc = 0,
-            jmin = 0,
-            jmax = 0,
-            s1 = 0,
-            s2 = 0,
-            s3 = 0,
-            s4 = 0,
-            i1 = null,
-            i2 = null,
-            i3 = null,
-            i4 = null,
-            mtu = if (rawConfig.mtu in 1200..1360) rawConfig.mtu else 1280,
+            jc = rawConfig.jc,
+            jmin = rawConfig.jmin,
+            jmax = rawConfig.jmax,
+            s1 = rawConfig.s1,
+            s2 = rawConfig.s2,
+            s3 = rawConfig.s3,
+            s4 = rawConfig.s4,
+            i1 = rawConfig.i1,
+            i2 = rawConfig.i2,
+            i3 = rawConfig.i3,
+            i4 = rawConfig.i4,
+            mtu = if (rawConfig.mtu in 1200..1420) rawConfig.mtu else 1280,
             dns = cleanDns,
             allowedIps = cleanAllowedIps,
             endpoint = rawConfig.endpoint.ifBlank { "188.114.96.1:1074" },
-            isWarp = true
+            isWarp = isCloudflareWarp
         )
-        return Pair(preparedConfig, true)
+        return Pair(preparedConfig, isCloudflareWarp)
     }
 
     private fun parseNativeConfig(config: AwgConfig): Config {

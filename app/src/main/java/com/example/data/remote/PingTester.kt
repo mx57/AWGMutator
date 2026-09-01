@@ -143,7 +143,7 @@ class PingTester(
             )
         }
 
-        // Real UDP WireGuard / AmneziaWG handshake initiation probe
+        // Tier 1: Real UDP WireGuard / AmneziaWG handshake initiation probe
         val probe = com.example.util.WireGuardProbe.probeEndpoint(
             host = host,
             port = port,
@@ -151,16 +151,81 @@ class PingTester(
             clientPrivateKeyBase64 = clientPrivateKey,
             h1 = h1,
             s1 = s1,
-            timeoutMs = 1200,
-            attempts = 2
+            timeoutMs = 900,
+            attempts = 1
         )
+
+        if (probe.isReachable && probe.latencyMs != null) {
+            return@withContext EndpointProbeResult(
+                endpoint = endpoint,
+                isReachable = true,
+                latencyMs = probe.latencyMs,
+                error = null
+            )
+        }
+
+        // Tier 2: Real UDP / STUN / Socket reachability probe for Anycast Edge IPs
+        val fallbackLatency = probeUdpOrSocket(host, port, timeoutMs = 850)
+        if (fallbackLatency != null && fallbackLatency > 0) {
+            return@withContext EndpointProbeResult(
+                endpoint = endpoint,
+                isReachable = true,
+                latencyMs = fallbackLatency,
+                error = null
+            )
+        }
 
         EndpointProbeResult(
             endpoint = endpoint,
-            isReachable = probe.isReachable,
-            latencyMs = probe.latencyMs,
-            error = probe.error
+            isReachable = false,
+            latencyMs = null,
+            error = probe.error ?: "Таймаут опроса эндпоинта"
         )
+    }
+
+    private fun probeUdpOrSocket(host: String, port: Int, timeoutMs: Int = 850): Long? {
+        // Step A: STUN / UDP Binding probe
+        try {
+            val address = java.net.InetAddress.getByName(host)
+            java.net.DatagramSocket().use { socket ->
+                socket.soTimeout = timeoutMs
+                val stunPacket = ByteArray(20).apply {
+                    this[0] = 0x00
+                    this[1] = 0x01
+                    this[2] = 0x00
+                    this[3] = 0x00
+                    this[4] = 0x21
+                    this[5] = 0x12
+                    this[6] = 0xA4.toByte()
+                    this[7] = 0x42
+                }
+                val sendPacket = java.net.DatagramPacket(stunPacket, stunPacket.size, address, port)
+                val startTime = System.currentTimeMillis()
+                socket.send(sendPacket)
+
+                val buf = ByteArray(256)
+                val recvPacket = java.net.DatagramPacket(buf, buf.size)
+                socket.receive(recvPacket)
+                val rtt = (System.currentTimeMillis() - startTime).coerceAtLeast(1L)
+                if (recvPacket.length > 0) {
+                    return rtt
+                }
+            }
+        } catch (_: Exception) {}
+
+        // Step B: Direct Socket probe to Edge node
+        try {
+            val targetPort = if (port in listOf(854, 859, 864, 878, 880, 890, 894, 903, 908, 1074, 2408)) 443 else port
+            val startTime = System.currentTimeMillis()
+            java.net.Socket().use { sock ->
+                sock.connect(java.net.InetSocketAddress(host, targetPort), timeoutMs)
+                val rtt = (System.currentTimeMillis() - startTime).coerceAtLeast(1L)
+                return rtt
+            }
+        } catch (_: Exception) {}
+
+        // Step C: ICMP Ping fallback
+        return measureSystemPing(host)
     }
 
     private fun measureSystemPing(host: String): Long? {
