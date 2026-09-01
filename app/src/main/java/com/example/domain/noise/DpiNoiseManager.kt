@@ -2,7 +2,6 @@ package com.example.domain.noise
 
 import com.example.domain.model.AwgConfig
 import java.security.SecureRandom
-import java.util.Random
 
 enum class NoiseProfile {
     STEALTH_TLS_EMULATION,
@@ -25,14 +24,13 @@ data class HandshakeNoiseConfig(
  */
 class DpiNoiseManager {
     private val secureRandom = SecureRandom()
-    private val random = Random()
 
     /**
      * Generates a randomized noise payload of random padding bytes to append to initial handshake packets.
      */
     fun generateHandshakeNoisePadding(minBytes: Int = 32, maxBytes: Int = 256): ByteArray {
         val size = if (maxBytes > minBytes) {
-            minBytes + random.nextInt(maxBytes - minBytes)
+            minBytes + secureRandom.nextInt(maxBytes - minBytes)
         } else {
             minBytes
         }
@@ -46,8 +44,8 @@ class DpiNoiseManager {
      * Prevents fixed OS window fingerprinting (which DPI inspects in SYN/ACK and initial packets).
      */
     fun calculateDynamicWindowSize(baseMtu: Int = 1360): Int {
-        val baseMultiplier = 32 + random.nextInt(32) // 32 to 64 segments
-        val jitter = random.nextInt(1024) - 512
+        val baseMultiplier = 32 + secureRandom.nextInt(32) // 32 to 64 segments
+        val jitter = secureRandom.nextInt(1024) - 512
         return (baseMtu * baseMultiplier + jitter).coerceIn(32768, 262144)
     }
 
@@ -56,15 +54,15 @@ class DpiNoiseManager {
      * randomized S1..S4 payload fragmentation offsets, and modified headers.
      */
     fun applyRuntimeNoiseModulation(config: AwgConfig): AwgConfig {
-        val jitterJmin = (config.jmin + (random.nextInt(32) - 16)).coerceIn(16, 512)
-        val jitterJmax = (config.jmax + (random.nextInt(64) - 32)).coerceIn(jitterJmin + 32, 1024)
+        val jitterJmin = (config.jmin + (secureRandom.nextInt(32) - 16)).coerceIn(16, 512)
+        val jitterJmax = (config.jmax + (secureRandom.nextInt(64) - 32)).coerceIn(jitterJmin + 32, 1024)
         val dynamicWindow = calculateDynamicWindowSize(config.mtu)
 
         return config.copy(
             jmin = jitterJmin,
             jmax = jitterJmax,
-            s1 = (config.s1 + random.nextInt(8) - 4).coerceIn(4, 64),
-            s2 = (config.s2 + random.nextInt(8) - 4).coerceIn(8, 64)
+            s1 = (config.s1 + secureRandom.nextInt(8) - 4).coerceIn(4, 64),
+            s2 = (config.s2 + secureRandom.nextInt(8) - 4).coerceIn(8, 64)
         )
     }
 
@@ -77,31 +75,31 @@ class DpiNoiseManager {
     ): AwgConfig {
         val (noiseJc, noiseJmin, noiseJmax, noiseS1, noiseS2) = when (profile) {
             NoiseProfile.STEALTH_TLS_EMULATION -> {
-                val jmin = 128 + random.nextInt(64)
-                val jmax = jmin + 384 + random.nextInt(256)
-                NoiseParams(jc = 4 + random.nextInt(3), jmin = jmin, jmax = jmax, s1 = 32 + random.nextInt(16), s2 = 40 + random.nextInt(16))
+                val jmin = 128 + secureRandom.nextInt(64)
+                val jmax = jmin + 384 + secureRandom.nextInt(256)
+                NoiseParams(jc = 4 + secureRandom.nextInt(3), jmin = jmin, jmax = jmax, s1 = 32 + secureRandom.nextInt(16), s2 = 40 + secureRandom.nextInt(16))
             }
             NoiseProfile.AGGRESSIVE_ENTROPY_BURST -> {
-                val jmin = 160 + random.nextInt(96)
-                val jmax = jmin + 512 + random.nextInt(320)
-                NoiseParams(jc = 6 + random.nextInt(4), jmin = jmin, jmax = jmax, s1 = 40 + random.nextInt(20), s2 = 48 + random.nextInt(16))
+                val jmin = 160 + secureRandom.nextInt(96)
+                val jmax = jmin + 512 + secureRandom.nextInt(320)
+                NoiseParams(jc = 6 + secureRandom.nextInt(4), jmin = jmin, jmax = jmax, s1 = 40 + secureRandom.nextInt(20), s2 = 48 + secureRandom.nextInt(16))
             }
             NoiseProfile.LOW_OVERHEAD_STREAMING -> {
-                val jmin = 48 + random.nextInt(32)
-                val jmax = jmin + 128 + random.nextInt(64)
+                val jmin = 48 + secureRandom.nextInt(32)
+                val jmax = jmin + 128 + secureRandom.nextInt(64)
                 NoiseParams(jc = 2, jmin = jmin, jmax = jmax, s1 = 16, s2 = 20)
             }
             NoiseProfile.DYNAMIC_ADAPTIVE -> {
-                val jmin = 64 + random.nextInt(128)
-                val jmax = jmin + 256 + random.nextInt(384)
-                NoiseParams(jc = 3 + random.nextInt(4), jmin = jmin, jmax = jmax, s1 = 24 + random.nextInt(20), s2 = 32 + random.nextInt(24))
+                val jmin = 64 + secureRandom.nextInt(128)
+                val jmax = jmin + 256 + secureRandom.nextInt(384)
+                NoiseParams(jc = 3 + secureRandom.nextInt(4), jmin = jmin, jmax = jmax, s1 = 24 + secureRandom.nextInt(20), s2 = 32 + secureRandom.nextInt(24))
             }
         }
 
-        val dynamicH1 = (random.nextLong() and 0x7FFFFFFF) + 1500000L
-        val dynamicH2 = (random.nextLong() and 0x7FFFFFFF) + 3000000L
-        val dynamicH3 = (random.nextLong() and 0x7FFFFFFF) + 4500000L
-        val dynamicH4 = (random.nextLong() and 0x7FFFFFFF) + 6000000L
+        val dynamicH1 = (secureRandom.nextLong() and 0x7FFFFFFF) + 1500000L
+        val dynamicH2 = (secureRandom.nextLong() and 0x7FFFFFFF) + 3000000L
+        val dynamicH3 = (secureRandom.nextLong() and 0x7FFFFFFF) + 4500000L
+        val dynamicH4 = (secureRandom.nextLong() and 0x7FFFFFFF) + 6000000L
 
         return config.copy(
             jc = noiseJc,
