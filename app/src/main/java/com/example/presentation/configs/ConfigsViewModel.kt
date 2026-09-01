@@ -212,21 +212,27 @@ class ConfigsViewModel(
     fun testConfigEndpoint(config: AwgConfig) {
         viewModelScope.launch(Dispatchers.IO) {
             _uiState.value = _uiState.value.copy(testingConfigId = config.id)
-            val result = App.instance.pingTester.testEndpoint(config.endpoint)
+            val result = App.instance.pingTester.testEndpoint(
+                endpoint = config.endpoint,
+                peerPublicKey = config.peerPublicKey.ifBlank { com.example.util.WireGuardProbe.DEFAULT_CLOUDFLARE_WARP_PUBKEY },
+                clientPrivateKey = config.privateKey.ifBlank { null },
+                h1 = config.h1,
+                s1 = config.s1
+            )
             if (result.isReachable && result.latencyMs != null) {
                 val updated = config.copy(lastPingMs = result.latencyMs)
                 configRepository.saveConfig(updated)
                 withContext(Dispatchers.Main) {
                     _uiState.value = _uiState.value.copy(
                         testingConfigId = null,
-                        userMessage = "✓ Endpoint '${config.endpoint}' active! Ping: ${result.latencyMs}ms"
+                        userMessage = "✓ UDP Handshake '${config.endpoint}' OK! Latency: ${result.latencyMs}ms"
                     )
                 }
             } else {
                 withContext(Dispatchers.Main) {
                     _uiState.value = _uiState.value.copy(
                         testingConfigId = null,
-                        userMessage = "✗ Endpoint '${config.endpoint}' unreachable: ${result.error ?: "Timeout"}"
+                        userMessage = "✗ UDP Handshake '${config.endpoint}' dropped: ${result.error ?: "Timeout / Blocked"}"
                     )
                 }
             }

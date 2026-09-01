@@ -122,54 +122,44 @@ class PingTester(
     }
 
     /**
-     * Tests real reachability and latency of a specific WireGuard / AmneziaWG endpoint (e.g. "188.114.97.1:854").
-     * Uses real ICMP ping (/system/bin/ping), TCP handshake probing, and verified socket connections.
-     * Returns true latency (e.g. 28ms, 65ms) or unreachable (null).
+     * Tests real reachability and latency of a specific WireGuard / AmneziaWG endpoint (e.g. "188.114.96.1:1074").
+     * Sends a real UDP WireGuard Noise Handshake Initiation packet directly to the IP and port.
+     * Prevents false positives from ICMP ping or TCP 443 web connections on blocked UDP Anycast endpoints.
      */
-    suspend fun testEndpoint(endpoint: String): EndpointProbeResult = withContext(Dispatchers.IO) {
+    suspend fun testEndpoint(
+        endpoint: String,
+        peerPublicKey: String = com.example.util.WireGuardProbe.DEFAULT_CLOUDFLARE_WARP_PUBKEY,
+        clientPrivateKey: String? = null,
+        h1: Long = 1L,
+        s1: Int = 0
+    ): EndpointProbeResult = withContext(Dispatchers.IO) {
         val (host, port) = parseEndpointHostAndPort(endpoint)
-
-        // 1. Try real system ICMP ping first
-        val icmpPing = measureSystemPing(host)
-        if (icmpPing != null && icmpPing > 0) {
+        if (host.isBlank() || !isValidHost(host)) {
             return@withContext EndpointProbeResult(
                 endpoint = endpoint,
-                isReachable = true,
-                latencyMs = icmpPing,
-                error = null
+                isReachable = false,
+                latencyMs = null,
+                error = "Некорректный хост эндпоинта"
             )
         }
 
-        // 2. Try TCP handshake to specified port
-        val tcpDirect = measureTcpPing(host, port, timeoutMs = 1500)
-        if (tcpDirect != null && tcpDirect > 0) {
-            return@withContext EndpointProbeResult(
-                endpoint = endpoint,
-                isReachable = true,
-                latencyMs = tcpDirect,
-                error = null
-            )
-        }
+        // Real UDP WireGuard / AmneziaWG handshake initiation probe
+        val probe = com.example.util.WireGuardProbe.probeEndpoint(
+            host = host,
+            port = port,
+            peerPublicKeyBase64 = peerPublicKey,
+            clientPrivateKeyBase64 = clientPrivateKey,
+            h1 = h1,
+            s1 = s1,
+            timeoutMs = 1200,
+            attempts = 2
+        )
 
-        // 3. If target port is UDP-only (e.g. 854/1074/2408/51820), probe host edge availability via HTTPS (port 443) or HTTP (port 80)
-        val edgePing = measureTcpPing(host, 443, timeoutMs = 1500)
-            ?: measureTcpPing(host, 80, timeoutMs = 1500)
-
-        if (edgePing != null && edgePing > 0) {
-            return@withContext EndpointProbeResult(
-                endpoint = endpoint,
-                isReachable = true,
-                latencyMs = edgePing,
-                error = null
-            )
-        }
-
-        // Endpoint is not responding / blocked
-        return@withContext EndpointProbeResult(
+        EndpointProbeResult(
             endpoint = endpoint,
-            isReachable = false,
-            latencyMs = null,
-            error = "Узел недоступен или заблокирован провайдером"
+            isReachable = probe.isReachable,
+            latencyMs = probe.latencyMs,
+            error = probe.error
         )
     }
 

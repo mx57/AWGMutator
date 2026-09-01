@@ -21,23 +21,52 @@ class FitnessEvaluator(
         targetUrls: List<String> = BlockedServicesCatalog.allServices.map { it.testUrl }
     ): FitnessResult {
         // Yield to let UI update progress bar smoothly
-        delay(50)
+        delay(30)
 
-        val pingResult = pingTester.evaluateTargets(
-            genomeId = genome.id,
-            targets = targetUrls,
-            attemptsPerTarget = 1
+        val targetEndpoint = (if (!genome.endpoint.isNullOrBlank()) genome.endpoint else baseConfig.endpoint).ifBlank { "188.114.96.1:1074" }
+        val peerPubKey = baseConfig.peerPublicKey.ifBlank { com.example.util.WireGuardProbe.DEFAULT_CLOUDFLARE_WARP_PUBKEY }
+        val clientPrivKey = baseConfig.privateKey.ifBlank { null }
+
+        // Real UDP handshake test to endpoint using genome's obfuscation parameters
+        val endpointProbe = pingTester.testEndpoint(
+            endpoint = targetEndpoint,
+            peerPublicKey = peerPubKey,
+            clientPrivateKey = clientPrivKey,
+            h1 = genome.h1,
+            s1 = genome.s1
         )
+
+        if (!endpointProbe.isReachable || endpointProbe.latencyMs == null || endpointProbe.latencyMs <= 0) {
+            return FitnessResult(
+                genomeId = genome.id,
+                avgPingMs = 9999L,
+                minPingMs = 9999L,
+                maxPingMs = 9999L,
+                successRate = 0.0,
+                fitnessScore = 0.0,
+                testedUrls = listOf(targetEndpoint),
+                errorMessage = endpointProbe.error ?: "UDP Handshake dropped / TSPU Filtered"
+            )
+        }
+
+        val udpLatency = endpointProbe.latencyMs
 
         // Compute Anti-DPI Obfuscation Multiplier (0.5 to 2.5)
         val antiDpiScore = computeAntiDpiScore(genome)
 
-        // Target-specific censored service priority multiplier
-        val censoredServiceBonus = calculateCensoredServiceBonus(pingResult)
+        val baseFitness = (1000.0 / (udpLatency + 1.0)) * 2.0
+        val combinedFitness = baseFitness * antiDpiScore
 
-        val combinedFitness = pingResult.fitnessScore * antiDpiScore * censoredServiceBonus
-
-        return pingResult.copy(fitnessScore = combinedFitness)
+        return FitnessResult(
+            genomeId = genome.id,
+            avgPingMs = udpLatency,
+            minPingMs = udpLatency,
+            maxPingMs = udpLatency,
+            successRate = 1.0,
+            fitnessScore = if (combinedFitness.isNaN() || combinedFitness <= 0.0) 0.0 else combinedFitness,
+            testedUrls = listOf(targetEndpoint),
+            errorMessage = null
+        )
     }
 
     /**
