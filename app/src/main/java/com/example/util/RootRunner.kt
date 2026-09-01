@@ -101,12 +101,4 @@ object RootRunner {
             }
         }
     }
-
-    /**
-     * Checks if kernel WireGuard or AmneziaWG module is loaded or supported.
-     */
-    suspend fun checkKernelWgSupport(): Boolean = withContext(Dispatchers.IO) {
-        val res = execute("cat /proc/modules | grep -E 'wireguard|amneziawg'", "which wg || which awg")
-        res.isSuccess && (res.stdout.contains("wireguard") || res.stdout.contains("amneziawg") || res.stdout.contains("/bin/"))
-    }
 }
