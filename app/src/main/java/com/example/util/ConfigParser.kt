@@ -205,11 +205,10 @@ object ConfigParser {
 
     private fun applyDefaults(data: ParsedConfigData, isCloudflareWarp: Boolean) {
         if (isCloudflareWarp) {
-            val warpH1 = AwgConfig.calculateWarpH1(data.reserved)
-            data.h1 = if (warpH1 != 1L) warpH1 else (if (data.h1 > 0L) data.h1 else 1L)
-            data.h2 = if (data.h2 > 0L) data.h2 else 2L
-            data.h3 = if (data.h3 > 0L) data.h3 else 3L
-            data.h4 = if (data.h4 > 0L) data.h4 else 4L
+            data.h1 = 1L
+            data.h2 = 2L
+            data.h3 = 3L
+            data.h4 = 4L
 
             data.s1 = 0
             data.s2 = 0

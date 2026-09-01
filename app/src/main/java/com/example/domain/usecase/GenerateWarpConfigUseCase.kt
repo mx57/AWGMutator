@@ -27,7 +27,6 @@ class GenerateWarpConfigUseCase(
             if (!endpoint.isNullOrBlank()) {
                 awgConfig = awgConfig.copy(endpoint = endpoint)
             }
-            val warpH1 = AwgConfig.calculateWarpH1(awgConfig.reserved)
             awgConfig = awgConfig.copy(
                 dns = dns,
                 mtu = mtu,
@@ -38,7 +37,7 @@ class GenerateWarpConfigUseCase(
                 s2 = 0,
                 s3 = 0,
                 s4 = 0,
-                h1 = warpH1,
+                h1 = 1L,
                 h2 = 2L,
                 h3 = 3L,
                 h4 = 4L,
