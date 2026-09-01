@@ -92,7 +92,6 @@ data class AwgConfig(
             if (s4 > 0) builder.appendLine("S4 = $s4")
         }
 
-        val warpH1 = calculateWarpH1(reserved)
         val effectiveH1 = if ((isCloudflareWarpPeer || !reserved.isNullOrBlank()) && h1 <= 4L) {
             val calc = calculateWarpH1(reserved)
             if (calc != 1L) calc else h1
