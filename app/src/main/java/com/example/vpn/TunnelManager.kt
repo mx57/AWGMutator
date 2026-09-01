@@ -40,6 +40,10 @@ class TunnelManager(private val context: Context) {
     private val _logs = MutableStateFlow<List<String>>(emptyList())
     val logs: StateFlow<List<String>> = _logs.asStateFlow()
 
+    private val structuredQueue = ArrayList<com.example.domain.model.TunnelLogItem>()
+    private val _structuredLogs = MutableStateFlow<List<com.example.domain.model.TunnelLogItem>>(emptyList())
+    val structuredLogs: StateFlow<List<com.example.domain.model.TunnelLogItem>> = _structuredLogs.asStateFlow()
+
     private val timeFormat = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
     private val scope = CoroutineScope(Dispatchers.IO + Job())
     private var statsJob: Job? = null
@@ -69,21 +73,52 @@ class TunnelManager(private val context: Context) {
         }
     }
 
+    @Synchronized
     fun log(tag: String, message: String) {
         val timestamp = timeFormat.format(Date())
         val formatted = "[$timestamp] [$tag] $message"
         Log.i(tag, message)
 
+        // Raw logs queue
         logQueue.addLast(formatted)
         while (logQueue.size > maxLogs) {
             logQueue.pollFirst()
         }
         _logs.value = logQueue.toList()
+
+        // Structured deduplicating logs
+        val last = structuredQueue.lastOrNull()
+        if (last != null && last.tag == tag && last.message == message) {
+            // Consecutive duplicate: increment repeat count instead of adding another duplicate line
+            structuredQueue[structuredQueue.size - 1] = last.copy(
+                count = last.count + 1,
+                lastTimestamp = timestamp
+            )
+        } else {
+            // New distinct event
+            structuredQueue.add(
+                com.example.domain.model.TunnelLogItem(
+                    timestamp = timestamp,
+                    tag = tag,
+                    message = message,
+                    count = 1,
+                    firstTimestamp = timestamp,
+                    lastTimestamp = timestamp
+                )
+            )
+            while (structuredQueue.size > maxLogs) {
+                structuredQueue.removeAt(0)
+            }
+        }
+        _structuredLogs.value = structuredQueue.toList()
     }
 
+    @Synchronized
     fun clearLogs() {
         logQueue.clear()
+        structuredQueue.clear()
         _logs.value = emptyList()
+        _structuredLogs.value = emptyList()
     }
 
     fun getFormattedFullLogText(): String {

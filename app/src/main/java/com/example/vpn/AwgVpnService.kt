@@ -58,11 +58,12 @@ class AwgVpnService : VpnService() {
                 if (!configRaw.isNullOrBlank()) {
                     val parsed = ConfigParser.parse(configRaw, configName).getOrNull()
                     if (parsed != null) {
-                        App.instance.tunnelManager.connect(parsed)
+                        startTunnel(parsed)
                     }
                 }
             }
             ACTION_DISCONNECT -> {
+                stopTunnel(null)
                 App.instance.tunnelManager.disconnect()
                 stopForeground(STOP_FOREGROUND_REMOVE)
                 stopSelf()

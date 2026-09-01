@@ -90,34 +90,21 @@ open class CloudflareApi(
                 return okhttp3.Dns.SYSTEM.lookup(hostname)
             }
         })
-        .certificatePinner(
-            CertificatePinner.Builder()
-                .add("api.cloudflareclient.com", "sha256/yH5vwhslikJJvuTeeCBU82wbWscNX45Jd68sq4wPZGs=")
-                .add("api.cloudflareclient.com", "sha256/gSM7f75FkvH583eN7P4Q0gD02V98fL/3GgS7H2r+0Ww=")
-                .add("api.cloudflareclient.com", "sha256/r/mFx3752654Aj10oY2lK6squcamF/A6wFZ22BTHLHg=")
-                .add("api.cloudflareclient.com", "sha256/8Rw90Ej3Ttt8RRkrg+WYDS9n7IS03bk5bjP/UXPtaY8=")
-                .add("engage.cloudflareclient.com", "sha256/yH5vwhslikJJvuTeeCBU82wbWscNX45Jd68sq4wPZGs=")
-                .add("engage.cloudflareclient.com", "sha256/gSM7f75FkvH583eN7P4Q0gD02V98fL/3GgS7H2r+0Ww=")
-                .add("engage.cloudflareclient.com", "sha256/r/mFx3752654Aj10oY2lK6squcamF/A6wFZ22BTHLHg=")
-                .add("engage.cloudflareclient.com", "sha256/8Rw90Ej3Ttt8RRkrg+WYDS9n7IS03bk5bjP/UXPtaY8=")
-                .add("*.cloudflareclient.com", "sha256/yH5vwhslikJJvuTeeCBU82wbWscNX45Jd68sq4wPZGs=")
-                .add("*.cloudflareclient.com", "sha256/gSM7f75FkvH583eN7P4Q0gD02V98fL/3GgS7H2r+0Ww=")
-                .add("*.cloudflareclient.com", "sha256/r/mFx3752654Aj10oY2lK6squcamF/A6wFZ22BTHLHg=")
-                .add("*.cloudflareclient.com", "sha256/8Rw90Ej3Ttt8RRkrg+WYDS9n7IS03bk5bjP/UXPtaY8=")
-                .build()
-        )
-        .connectTimeout(5, TimeUnit.SECONDS)
-        .readTimeout(5, TimeUnit.SECONDS)
-        .writeTimeout(5, TimeUnit.SECONDS)
+        .connectTimeout(7, TimeUnit.SECONDS)
+        .readTimeout(7, TimeUnit.SECONDS)
+        .writeTimeout(7, TimeUnit.SECONDS)
         .retryOnConnectionFailure(true)
         .build()
 ) {
     val mirrors: List<CloudflareMirror> = listOf(
         CloudflareMirror("https://api.cloudflareclient.com/v0a3900", null, "Official API v0a3900"),
         CloudflareMirror("https://api.cloudflareclient.com/v0a2158", null, "Official API v0a2158"),
-        CloudflareMirror("https://api.cloudflareclient.com/v0a1922", null, "Official API v0a1922"),
         CloudflareMirror("https://engage.cloudflareclient.com/v0a2158", null, "Engage Anycast Mirror"),
-        CloudflareMirror("https://api.cloudflareclient.com/v0a884", null, "Official API v0a884")
+        CloudflareMirror("https://api.cloudflareclient.com/v0a1922", null, "Official API v0a1922"),
+        CloudflareMirror("https://api.cloudflareclient.com/v0a884", null, "Official API v0a884"),
+        CloudflareMirror("https://188.114.97.1/v0a3900", "api.cloudflareclient.com", "Anycast Mirror 188.114.97.1"),
+        CloudflareMirror("https://188.114.96.1/v0a3900", "api.cloudflareclient.com", "Anycast Mirror 188.114.96.1"),
+        CloudflareMirror("https://162.159.192.1/v0a3900", "api.cloudflareclient.com", "Anycast Mirror 162.159.192.1")
     )
 
     private val jsonMediaType = "application/json; charset=UTF-8".toMediaType()
@@ -192,23 +179,10 @@ open class CloudflareApi(
             }
         }
 
-        // Fallback: Synthesize local valid WARP configuration if direct registration failed (e.g. API domain blocking)
-        val keyPair = WireGuardKeyGen.generateKeyPair()
-        val randomReserved = "${Random().nextInt(256)}, ${Random().nextInt(256)}, ${Random().nextInt(256)}"
-        val fallbackConfig = WarpConfig(
-            accountId = generateRandomString(16),
-            accessToken = generateRandomString(32),
-            privateKey = keyPair.privateKey,
-            publicKey = keyPair.publicKey,
-            v4Address = "172.16.0.2/32",
-            v6Address = "2606:4700:110:893c::/128",
-            endpointV4 = "188.114.97.1:854",
-            endpointV6 = "[2606:4700:d0::a29f:c001]:854",
-            reserved = randomReserved,
-            peerPublicKey = "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=",
-            warpPlusEnabled = !licenseKey.isNullOrBlank()
+        // If all mirrors fail, return failure so user/UI gets actionable error instead of dead key
+        Result.failure(
+            IOException("Cloudflare WARP registration failed across ${sortedMirrors.size} available mirrors. Please check network connectivity or try an alternate DNS/SNI preset.")
         )
-        Result.success(fallbackConfig)
     }
 
     private suspend fun registerAccountOnMirror(

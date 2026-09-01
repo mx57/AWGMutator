@@ -32,6 +32,7 @@ data class ConfigsUiState(
     val isRootAvailable: Boolean = false,
     val showAddDialog: Boolean = false,
     val showWarpDialog: Boolean = false,
+    val showMasqueDialog: Boolean = false,
     val showImportDialog: Boolean = false,
     val showScannerDialog: Boolean = false,
     val showDnsSelectionDialog: Boolean = false,
@@ -39,6 +40,7 @@ data class ConfigsUiState(
     val searchQuery: String = "",
     val activeQrConfig: AwgConfig? = null,
     val activeExportConfig: AwgConfig? = null,
+    val activeMasqueJson: String? = null,
     val testingConfigId: String? = null,
     val userMessage: String? = null,
     val selectedCountry: String = "ALL",
@@ -56,6 +58,10 @@ class ConfigsViewModel(
         App.instance.configRepository
     ),
     private val generateHybridUseCase: GenerateHybridWarpAwgUseCase = GenerateHybridWarpAwgUseCase(
+        App.instance.cloudflareApi,
+        App.instance.configRepository
+    ),
+    private val generateMasqueUseCase: com.example.domain.usecase.GenerateMasqueConfigUseCase = com.example.domain.usecase.GenerateMasqueConfigUseCase(
         App.instance.cloudflareApi,
         App.instance.configRepository
     ),
@@ -92,6 +98,14 @@ class ConfigsViewModel(
 
     fun showWarpDialog(show: Boolean) {
         _uiState.value = _uiState.value.copy(showWarpDialog = show)
+    }
+
+    fun showMasqueDialog(show: Boolean) {
+        _uiState.value = _uiState.value.copy(showMasqueDialog = show)
+    }
+
+    fun dismissMasqueJsonDialog() {
+        _uiState.value = _uiState.value.copy(activeMasqueJson = null)
     }
 
     fun showImportDialog(show: Boolean) {
@@ -351,6 +365,67 @@ class ConfigsViewModel(
                 )
             }
         }
+    }
+
+    fun generateMasqueProfile(
+        name: String,
+        licenseKey: String?,
+        sniOverride: String?,
+        serverIp: String,
+        serverPort: Int
+    ) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _uiState.value = _uiState.value.copy(isGenerating = true)
+            val result = generateMasqueUseCase(
+                customName = name.ifBlank { "Cloudflare WARP MASQUE" },
+                licenseKey = licenseKey,
+                sniOverride = sniOverride,
+                serverIp = serverIp.ifBlank { "188.114.97.1" },
+                serverPort = if (serverPort > 0) serverPort else 443
+            )
+            withContext(Dispatchers.Main) {
+                if (result.isSuccess) {
+                    val masque = result.getOrThrow()
+                    _uiState.value = _uiState.value.copy(
+                        isGenerating = false,
+                        showMasqueDialog = false,
+                        activeMasqueJson = masque.toFullSingBoxConfig(),
+                        userMessage = "MASQUE (HTTP/3 Connect-IP) configuration generated!"
+                    )
+                } else {
+                    _uiState.value = _uiState.value.copy(
+                        isGenerating = false,
+                        showMasqueDialog = false,
+                        userMessage = "MASQUE error: ${result.exceptionOrNull()?.localizedMessage}"
+                    )
+                }
+            }
+        }
+    }
+
+    fun exportSingBoxForConfig(config: AwgConfig): String {
+        return org.json.JSONObject().apply {
+            put("type", "wireguard")
+            put("tag", config.name)
+            put("server", config.endpoint.substringBefore(":"))
+            put("server_port", config.endpoint.substringAfter(":", "51820").toIntOrNull() ?: 51820)
+            put("local_address", org.json.JSONArray().apply {
+                config.address.split(",").forEach { put(it.trim()) }
+            })
+            put("private_key", config.privateKey)
+            put("peer_public_key", config.peerPublicKey)
+            if (!config.reserved.isNullOrBlank()) {
+                val triple = AwgConfig.parseReservedBytes(config.reserved)
+                if (triple != null) {
+                    put("reserved", org.json.JSONArray().apply {
+                        put(triple.first)
+                        put(triple.second)
+                        put(triple.third)
+                    })
+                }
+            }
+            put("mtu", config.mtu)
+        }.toString(2)
     }
 
     fun importConfig(rawText: String, name: String) {

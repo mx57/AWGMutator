@@ -9,6 +9,10 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import okhttp3.MediaType.Companion.toMediaTypeOrNull
+import okhttp3.OkHttpClient
+import okhttp3.Request
+import okhttp3.RequestBody.Companion.toRequestBody
 import java.io.FileDescriptor
 import java.io.FileInputStream
 import java.io.FileOutputStream
@@ -19,12 +23,13 @@ import java.net.InetSocketAddress
 import java.net.Socket
 import java.nio.ByteBuffer
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
 /**
  * High-performance Dual-Stack TUN Packet Router for Android VpnService.
  * Handles IPv4/IPv6 ICMP, fast asynchronous UDP/QUIC (YouTube, HTTP/3, DNS),
- * and TCP bidirectional stream forwarding with full exception containment, socket protection,
+ * encrypted DNS-over-HTTPS (DoH) failover, and TCP bidirectional stream forwarding with full exception containment, socket protection,
  * and comprehensive diagnostic packet flow logging.
  */
 class TunPacketRouter(
@@ -45,6 +50,23 @@ class TunPacketRouter(
 
     private val primaryDnsIp: String = config.dns.split(",").firstOrNull()?.trim()?.ifBlank { "1.1.1.1" } ?: "1.1.1.1"
     private val secondaryDnsIp: String = config.dns.split(",").getOrNull(1)?.trim()?.ifBlank { "8.8.8.8" } ?: "8.8.8.8"
+
+    private val dohClient: OkHttpClient by lazy {
+        OkHttpClient.Builder()
+            .socketFactory(object : javax.net.SocketFactory() {
+                private val defaultFactory = javax.net.SocketFactory.getDefault()
+                override fun createSocket(): Socket = defaultFactory.createSocket().also { vpnService.protect(it) }
+                override fun createSocket(host: String?, port: Int): Socket = defaultFactory.createSocket(host, port).also { vpnService.protect(it) }
+                override fun createSocket(host: String?, port: Int, localHost: InetAddress?, localPort: Int): Socket =
+                    defaultFactory.createSocket(host, port, localHost, localPort).also { vpnService.protect(it) }
+                override fun createSocket(host: InetAddress?, port: Int): Socket = defaultFactory.createSocket(host, port).also { vpnService.protect(it) }
+                override fun createSocket(address: InetAddress?, port: Int, localAddress: InetAddress?, localPort: Int): Socket =
+                    defaultFactory.createSocket(address, port, localAddress, localPort).also { vpnService.protect(it) }
+            })
+            .connectTimeout(3, TimeUnit.SECONDS)
+            .readTimeout(3, TimeUnit.SECONDS)
+            .build()
+    }
 
     // Asynchronous UDP Sessions with dedicated listener threads for continuous streaming
     private val udpSessions = ConcurrentHashMap<String, UdpSession>()
@@ -221,12 +243,15 @@ class TunPacketRouter(
         originalDstPort: Int,
         outputStream: FileOutputStream
     ) {
-        debugLog("PACKET_DNS", "DNS Query intercepted from ${clientIp.hostAddress}:$clientPort -> Forwarding to $primaryDnsIp:53")
+        debugLog("PACKET_DNS", "DNS Query intercepted from ${clientIp.hostAddress}:$clientPort -> Querying DNS")
         routerScope.launch {
+            var dnsResponse: ByteArray? = null
+
+            // 1. First attempt: standard fast UDP DNS
             try {
                 val socket = DatagramSocket().apply {
                     vpnService.protect(this)
-                    soTimeout = 3000
+                    soTimeout = 1500
                 }
 
                 socket.use { ds ->
@@ -243,26 +268,52 @@ class TunPacketRouter(
                     val recvPacket = DatagramPacket(respBuffer, respBuffer.size)
                     ds.receive(recvPacket)
 
-                    val dnsResponse = respBuffer.copyOf(recvPacket.length)
-                    rxBytesTotal.addAndGet(dnsResponse.size.toLong())
-                    onTrafficUpdate(rxBytesTotal.get(), txBytesTotal.get())
-                    debugLog("PACKET_DNS", "DNS Resolved: received ${dnsResponse.size}B from $dnsTarget -> Returned to client $clientPort")
+                    dnsResponse = respBuffer.copyOf(recvPacket.length)
+                    debugLog("PACKET_DNS", "DNS UDP Resolved: ${dnsResponse?.size}B from $dnsTarget")
+                }
+            } catch (e: Exception) {
+                debugLog("PACKET_DNS_WARN", "UDP DNS timed out (${e.message}), attempting encrypted DoH (Cloudflare 1.1.1.1)...")
+            }
 
-                    val replyIpPacket = buildIpv4UdpPacket(
-                        srcIp = originalDstIp,
-                        srcPort = originalDstPort,
-                        dstIp = clientIp,
-                        dstPort = clientPort,
-                        payload = dnsResponse
-                    )
+            // 2. Second attempt: Encrypted DNS-over-HTTPS (DoH) via protected socket to bypass ISP / TSPU blocks
+            if (dnsResponse == null || dnsResponse!!.isEmpty()) {
+                try {
+                    val dohRequest = Request.Builder()
+                        .url("https://1.1.1.1/dns-query")
+                        .header("Content-Type", "application/dns-message")
+                        .header("Accept", "application/dns-message")
+                        .post(dnsQuery.toRequestBody("application/dns-message".toMediaTypeOrNull()))
+                        .build()
 
-                    synchronized(outputStream) {
+                    val resp = dohClient.newCall(dohRequest).execute()
+                    if (resp.isSuccessful) {
+                        dnsResponse = resp.body?.bytes()
+                        debugLog("PACKET_DNS_DOH", "DNS resolved via DoH (HTTPS): ${dnsResponse?.size}B -> Restored client access")
+                    }
+                } catch (dohEx: Exception) {
+                    debugLog("PACKET_DNS_ERR", "DoH resolution failed: ${dohEx.message}")
+                }
+            }
+
+            if (dnsResponse != null && dnsResponse!!.isNotEmpty()) {
+                val finalResp = dnsResponse!!
+                rxBytesTotal.addAndGet(finalResp.size.toLong())
+                onTrafficUpdate(rxBytesTotal.get(), txBytesTotal.get())
+
+                val replyIpPacket = buildIpv4UdpPacket(
+                    srcIp = originalDstIp,
+                    srcPort = originalDstPort,
+                    dstIp = clientIp,
+                    dstPort = clientPort,
+                    payload = finalResp
+                )
+
+                synchronized(outputStream) {
+                    runCatching {
                         outputStream.write(replyIpPacket)
                         outputStream.flush()
                     }
                 }
-            } catch (e: Exception) {
-                debugLog("PACKET_DNS_ERR", "DNS query failed: ${e.message}")
             }
         }
     }

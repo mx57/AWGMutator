@@ -180,18 +180,35 @@ fun ConfigsScreen(
                     )
                 }
 
-                Button(
-                    onClick = { viewModel.showWarpDialog(true) },
-                    colors = ButtonDefaults.buttonColors(containerColor = CyberPurple),
-                    shape = RoundedCornerShape(8.dp),
-                    modifier = Modifier.height(34.dp).testTag("generate_warp_header_button")
-                ) {
-                    if (uiState.isGenerating) {
-                        CircularProgressIndicator(modifier = Modifier.size(12.dp), color = MaterialTheme.colorScheme.onPrimary)
-                    } else {
-                        Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(14.dp))
-                        Spacer(modifier = Modifier.width(4.dp))
-                        Text("+ WARP", style = MaterialTheme.typography.labelMedium)
+                Row(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    Button(
+                        onClick = { viewModel.showWarpDialog(true) },
+                        colors = ButtonDefaults.buttonColors(containerColor = CyberPurple),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.height(34.dp).testTag("generate_warp_header_button")
+                    ) {
+                        if (uiState.isGenerating && uiState.showWarpDialog) {
+                            CircularProgressIndicator(modifier = Modifier.size(12.dp), color = MaterialTheme.colorScheme.onPrimary)
+                        } else {
+                            Icon(Icons.Default.CloudDownload, contentDescription = null, modifier = Modifier.size(14.dp))
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("+ WARP", style = MaterialTheme.typography.labelMedium)
+                        }
+                    }
+
+                    Button(
+                        onClick = { viewModel.showMasqueDialog(true) },
+                        colors = ButtonDefaults.buttonColors(containerColor = CyberCyan),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.height(34.dp).testTag("generate_masque_header_button")
+                    ) {
+                        if (uiState.isGenerating && uiState.showMasqueDialog) {
+                            CircularProgressIndicator(modifier = Modifier.size(12.dp), color = MaterialTheme.colorScheme.onPrimary)
+                        } else {
+                            Icon(Icons.Default.AutoAwesome, contentDescription = null, modifier = Modifier.size(14.dp), tint = MaterialTheme.colorScheme.onPrimary)
+                            Spacer(modifier = Modifier.width(4.dp))
+                            Text("+ MASQUE", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onPrimary)
+                        }
                     }
                 }
             }
@@ -366,6 +383,24 @@ fun ConfigsScreen(
 
     uiState.activeExportConfig?.let { config ->
         ExportConfigDialog(config = config, onDismiss = { viewModel.showExportDialog(null) })
+    }
+
+    if (uiState.showMasqueDialog) {
+        GenerateMasqueDialog(
+            isGenerating = uiState.isGenerating,
+            defaultSni = uiState.selectedSniDomain,
+            onDismiss = { viewModel.showMasqueDialog(false) },
+            onGenerate = { name, license, sni, serverIp, serverPort ->
+                viewModel.generateMasqueProfile(name, license, sni, serverIp, serverPort)
+            }
+        )
+    }
+
+    uiState.activeMasqueJson?.let { jsonText ->
+        MasqueJsonViewerDialog(
+            jsonText = jsonText,
+            onDismiss = { viewModel.dismissMasqueJsonDialog() }
+        )
     }
 }
 
@@ -1461,6 +1496,216 @@ fun ExportConfigDialog(config: AwgConfig, onDismiss: () -> Unit) {
         dismissButton = {
             TextButton(onClick = onDismiss) {
                 Text("Close")
+            }
+        }
+    )
+}
+
+@Composable
+fun GenerateMasqueDialog(
+    isGenerating: Boolean,
+    defaultSni: String,
+    onDismiss: () -> Unit,
+    onGenerate: (name: String, license: String?, sni: String?, serverIp: String, serverPort: Int) -> Unit
+) {
+    var name by remember { mutableStateOf("WARP MASQUE (HTTP/3)") }
+    var licenseKey by remember { mutableStateOf("") }
+    var sni by remember { mutableStateOf(defaultSni.ifBlank { "vk.com" }) }
+    var serverIp by remember { mutableStateOf("188.114.97.1") }
+    var serverPort by remember { mutableIntStateOf(443) }
+
+    Dialog(onDismissRequest = onDismiss) {
+        Card(
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(8.dp),
+            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface)
+        ) {
+            Column(
+                modifier = Modifier
+                    .padding(20.dp)
+                    .verticalScroll(rememberScrollState()),
+                verticalArrangement = Arrangement.spacedBy(12.dp)
+            ) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Icon(Icons.Default.AutoAwesome, contentDescription = null, tint = CyberCyan, modifier = Modifier.size(24.dp))
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = "Generate MASQUE (HTTP/3)",
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                }
+
+                Text(
+                    text = "Generates a Cloudflare MASQUE (RFC 9298 Connect-IP) configuration with HTTP/3 encapsulation and TLS SNI spoofing modeled after LxBox for optimal Russian ISP/TSPU bypass.",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+
+                OutlinedTextField(
+                    value = name,
+                    onValueChange = { name = it },
+                    label = { Text("Profile Name") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
+                OutlinedTextField(
+                    value = licenseKey,
+                    onValueChange = { licenseKey = it },
+                    label = { Text("WARP+ License Key (Optional)") },
+                    placeholder = { Text("Leave empty for free WARP") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
+                OutlinedTextField(
+                    value = sni,
+                    onValueChange = { sni = it },
+                    label = { Text("TLS SNI Domain (Bypass / Spoof)") },
+                    modifier = Modifier.fillMaxWidth(),
+                    singleLine = true
+                )
+
+                // Quick SNI suggestions
+                Row(
+                    modifier = Modifier.horizontalScroll(rememberScrollState()),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp)
+                ) {
+                    listOf("vk.com", "yandex.ru", "engage.cloudflareclient.com", "cloudflare.com").forEach { domain ->
+                        FilterChip(
+                            selected = sni == domain,
+                            onClick = { sni = domain },
+                            label = { Text(domain, style = MaterialTheme.typography.labelSmall) },
+                            colors = FilterChipDefaults.filterChipColors(
+                                selectedContainerColor = CyberCyan.copy(alpha = 0.2f),
+                                selectedLabelColor = CyberCyan
+                            )
+                        )
+                    }
+                }
+
+                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(
+                        value = serverIp,
+                        onValueChange = { serverIp = it },
+                        label = { Text("Server IP") },
+                        modifier = Modifier.weight(2f),
+                        singleLine = true
+                    )
+                    OutlinedTextField(
+                        value = serverPort.toString(),
+                        onValueChange = { serverPort = it.toIntOrNull() ?: 443 },
+                        label = { Text("Port") },
+                        modifier = Modifier.weight(1f),
+                        singleLine = true
+                    )
+                }
+
+                Row(
+                    modifier = Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.End,
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    TextButton(onClick = onDismiss) { Text("Cancel") }
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Button(
+                        onClick = {
+                            onGenerate(
+                                name,
+                                licenseKey.ifBlank { null },
+                                sni.ifBlank { null },
+                                serverIp,
+                                serverPort
+                            )
+                        },
+                        enabled = !isGenerating,
+                        colors = ButtonDefaults.buttonColors(containerColor = CyberCyan)
+                    ) {
+                        if (isGenerating) {
+                            CircularProgressIndicator(modifier = Modifier.size(16.dp), color = MaterialTheme.colorScheme.onPrimary)
+                        } else {
+                            Text("Generate MASQUE")
+                        }
+                    }
+                }
+            }
+        }
+    }
+}
+
+@Composable
+fun MasqueJsonViewerDialog(
+    jsonText: String,
+    onDismiss: () -> Unit
+) {
+    val context = LocalContext.current
+
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(Icons.Default.Terminal, contentDescription = null, tint = CyberCyan, modifier = Modifier.size(20.dp))
+                Spacer(modifier = Modifier.width(8.dp))
+                Text("Sing-box MASQUE Configuration")
+            }
+        },
+        text = {
+            Column(modifier = Modifier.fillMaxWidth()) {
+                Text(
+                    text = "Ready to import into sing-box, Clash.Meta, or Nekobox with native MASQUE (HTTP/3 Connect-IP) support:",
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+                Spacer(modifier = Modifier.height(8.dp))
+                Surface(
+                    color = MaterialTheme.colorScheme.surfaceVariant,
+                    shape = RoundedCornerShape(8.dp),
+                    modifier = Modifier.fillMaxWidth().height(280.dp)
+                ) {
+                    Text(
+                        text = jsonText,
+                        style = MaterialTheme.typography.bodySmall.copy(fontFamily = FontFamily.Monospace, fontSize = 11.sp),
+                        modifier = Modifier.padding(10.dp).verticalScroll(rememberScrollState())
+                    )
+                }
+            }
+        },
+        confirmButton = {
+            Button(
+                onClick = {
+                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
+                    clipboard.setPrimaryClip(ClipData.newPlainText("Sing-box MASQUE Config", jsonText))
+                    onDismiss()
+                },
+                colors = ButtonDefaults.buttonColors(containerColor = CyberCyan)
+            ) {
+                Icon(Icons.Default.ContentCopy, contentDescription = null, modifier = Modifier.size(16.dp))
+                Spacer(modifier = Modifier.width(4.dp))
+                Text("Copy Sing-box JSON")
+            }
+        },
+        dismissButton = {
+            Row {
+                TextButton(
+                    onClick = {
+                        val shareIntent = android.content.Intent(android.content.Intent.ACTION_SEND).apply {
+                            type = "application/json"
+                            putExtra(android.content.Intent.EXTRA_SUBJECT, "masque-singbox.json")
+                            putExtra(android.content.Intent.EXTRA_TEXT, jsonText)
+                        }
+                        context.startActivity(android.content.Intent.createChooser(shareIntent, "Share MASQUE Config"))
+                    }
+                ) {
+                    Icon(Icons.Default.Share, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Share")
+                }
+                TextButton(onClick = onDismiss) {
+                    Text("Close")
+                }
             }
         }
     )

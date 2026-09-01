@@ -7,6 +7,7 @@ import androidx.compose.material.icons.filled.FolderZip
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Terminal
 import androidx.compose.material3.Icon
 import androidx.compose.material3.NavigationBar
 import androidx.compose.material3.NavigationBarItem
@@ -32,6 +33,7 @@ import com.example.presentation.antidpi.AntiDpiScreen
 import com.example.presentation.configs.ConfigsScreen
 import com.example.presentation.dashboard.DashboardScreen
 import com.example.presentation.evolution.EvolutionScreen
+import com.example.presentation.logs.LogViewerScreen
 import com.example.presentation.settings.SettingsScreen
 import com.example.ui.theme.CyberCyan
 
@@ -40,6 +42,7 @@ sealed class Screen(val route: String, val title: String, val icon: ImageVector)
     data object Configs : Screen("configs", "Configs", Icons.Default.FolderZip)
     data object AntiDpi : Screen("antidpi", "Anti-DPI", Icons.Default.Security)
     data object Evolution : Screen("evolution", "Evolution", Icons.Default.AutoAwesome)
+    data object Logs : Screen("logs", "Logs", Icons.Default.Terminal)
     data object Settings : Screen("settings", "Settings", Icons.Default.Settings)
 }
 
@@ -55,6 +58,7 @@ fun AppNavigation() {
         Screen.Configs,
         Screen.AntiDpi,
         Screen.Evolution,
+        Screen.Logs,
         Screen.Settings
     )
 
@@ -133,6 +137,9 @@ private fun AppNavHost(
         }
         composable(Screen.Evolution.route) {
             EvolutionScreen(snackbarHostState = snackbarHostState)
+        }
+        composable(Screen.Logs.route) {
+            LogViewerScreen()
         }
         composable(Screen.Settings.route) {
             SettingsScreen(snackbarHostState = snackbarHostState)
