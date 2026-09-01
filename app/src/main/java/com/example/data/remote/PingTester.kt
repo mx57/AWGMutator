@@ -380,6 +380,55 @@ class PingTester(
         }
     }
 
+    /**
+     * Probes an individual blocked/censored platform (e.g. YouTube, Instagram, Telegram)
+     * using HTTP/TLS HEAD request or raw TLS handshake to verify if DPI blocks it.
+     */
+    suspend fun probeService(service: BlockedService): ServiceProbeResult = withContext(Dispatchers.IO) {
+        val httpLatency = tryHttpHead(service.testUrl)
+        if (httpLatency != null && httpLatency > 0) {
+            return@withContext ServiceProbeResult(
+                service = service,
+                isAccessible = true,
+                latencyMs = httpLatency,
+                isDpiThrottled = httpLatency > 350L,
+                error = null
+            )
+        }
+
+        val tcpLatency = tryRawTcpHandshake(service.fallbackHost, service.fallbackPort, timeoutMs = 1200)
+        if (tcpLatency != null && tcpLatency > 0) {
+            return@withContext ServiceProbeResult(
+                service = service,
+                isAccessible = true,
+                latencyMs = tcpLatency,
+                isDpiThrottled = tcpLatency > 350L,
+                error = null
+            )
+        }
+
+        ServiceProbeResult(
+            service = service,
+            isAccessible = false,
+            latencyMs = null,
+            isDpiThrottled = false,
+            error = "Блокировка ТСПУ / DPI Filtered"
+        )
+    }
+
+    /**
+     * Concurrently probes all targeted blocked services to verify anti-censorship reachability.
+     */
+    suspend fun probeBlockedServices(services: List<BlockedService> = BlockedServicesCatalog.allServices): List<ServiceProbeResult> = withContext(Dispatchers.IO) {
+        coroutineScope {
+            services.map { service ->
+                async {
+                    probeService(service)
+                }
+            }.awaitAll()
+        }
+    }
+
     private fun measureServiceProbe(service: BlockedService): Long? {
         val httpResult = tryHttpHead(service.testUrl)
         if (httpResult != null && httpResult > 0) {

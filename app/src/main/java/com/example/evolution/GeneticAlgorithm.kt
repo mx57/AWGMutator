@@ -38,7 +38,10 @@ data class EvolutionProgress(
     val latestSuccessRate: Double = 1.0,
     val recentProbes: List<Pair<Long, Double>> = emptyList(),
     val isHypermutation: Boolean = false,
-    val diagnosticNote: String? = null
+    val diagnosticNote: String? = null,
+    val latestServiceResults: List<com.example.domain.model.ServiceProbeResult> = emptyList(),
+    val bestUnblockedCount: Int = 0,
+    val totalTargetServicesCount: Int = 8
 )
 
 /**
@@ -276,8 +279,12 @@ class GeneticAlgorithm(
                 logs = logs.take(60)
             )
 
-            // Evaluate fitness
-            val rawFitnessResult = evaluator.evaluate(candidateGenome, baseConfig, targetUrls)
+            // Multi-stage evaluation (UDP Handshake + Blocked Services Matrix + Anti-DPI Score)
+            val rawFitnessResult = evaluator.evaluate(
+                genome = candidateGenome,
+                baseConfig = baseConfig,
+                targetUrls = targetUrls
+            )
 
             val validatedFitness = sanitizeFitness(rawFitnessResult.fitnessScore)
             val validatedPing = if (rawFitnessResult.avgPingMs in 1..10000L) rawFitnessResult.avgPingMs else 50L
@@ -294,10 +301,23 @@ class GeneticAlgorithm(
 
             evaluatedPopulation.add(evaluatedGenome)
 
+            val unblocked = rawFitnessResult.unblockedServicesCount
+            val total = rawFitnessResult.totalServicesCount
+            val bypassLog = if (total > 0) {
+                "  └─ Specimen #$candidateIndex bypass: $unblocked/$total platforms (${(validatedSuccess * 100).toInt()}%) | RTT: ${validatedPing}ms | Score: ${"%.2f".format(validatedFitness)}"
+            } else {
+                "  └─ Specimen #$candidateIndex RTT: ${validatedPing}ms | Score: ${"%.2f".format(validatedFitness)}"
+            }
+            logs.add(0, bypassLog)
+
             _progress.value = _progress.value.copy(
                 latestLatencyMs = validatedPing,
                 latestSuccessRate = validatedSuccess,
-                recentProbes = probesHistory.takeLast(24)
+                recentProbes = probesHistory.takeLast(24),
+                latestServiceResults = rawFitnessResult.serviceResults,
+                bestUnblockedCount = maxOf(_progress.value.bestUnblockedCount, unblocked),
+                totalTargetServicesCount = if (total > 0) total else _progress.value.totalTargetServicesCount,
+                logs = logs.take(60)
             )
 
             evolutionRepository.recordLog(

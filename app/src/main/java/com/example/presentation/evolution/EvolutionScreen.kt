@@ -64,8 +64,10 @@ import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.domain.model.BlockedServicesCatalog
 import com.example.domain.model.EvolutionSettings
 import com.example.domain.model.Genome
+import com.example.domain.model.ServiceProbeResult
 import com.example.ui.theme.CyberCyan
 import com.example.ui.theme.CyberPurple
 import com.example.ui.theme.DangerRed
@@ -309,6 +311,105 @@ fun EvolutionScreen(
         }
 
         Spacer(modifier = Modifier.height(10.dp))
+
+        // Real-Time Censored Services Bypass Test Results
+        if (progress.isRunning || progress.latestServiceResults.isNotEmpty()) {
+            Card(
+                modifier = Modifier.fillMaxWidth(),
+                shape = RoundedCornerShape(10.dp),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                border = BorderStroke(1.dp, if (progress.bestUnblockedCount == progress.totalTargetServicesCount && progress.bestUnblockedCount > 0) NeonGreen.copy(alpha = 0.8f) else CyberCyan.copy(alpha = 0.4f))
+            ) {
+                Column(modifier = Modifier.padding(12.dp)) {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Text(
+                            text = "🛡️ Live Censored Bypass Probe",
+                            style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold, fontSize = 13.sp),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Surface(
+                            shape = RoundedCornerShape(12.dp),
+                            color = if (progress.bestUnblockedCount > 0) NeonGreen.copy(alpha = 0.15f) else MaterialTheme.colorScheme.errorContainer,
+                            border = BorderStroke(1.dp, if (progress.bestUnblockedCount > 0) NeonGreen.copy(alpha = 0.5f) else MaterialTheme.colorScheme.error)
+                        ) {
+                            Text(
+                                text = "${progress.bestUnblockedCount}/${progress.totalTargetServicesCount} Unblocked",
+                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                color = if (progress.bestUnblockedCount > 0) NeonGreen else MaterialTheme.colorScheme.error,
+                                modifier = Modifier.padding(horizontal = 8.dp, vertical = 2.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.height(8.dp))
+
+                    val servicesToDisplay = if (progress.latestServiceResults.isNotEmpty()) {
+                        progress.latestServiceResults
+                    } else {
+                        BlockedServicesCatalog.allServices.map {
+                            ServiceProbeResult(service = it, isAccessible = false, latencyMs = null)
+                        }
+                    }
+
+                    Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
+                        servicesToDisplay.chunked(2).forEach { rowServices ->
+                            Row(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            ) {
+                                rowServices.forEach { probe ->
+                                    Surface(
+                                        modifier = Modifier.weight(1f),
+                                        shape = RoundedCornerShape(6.dp),
+                                        color = if (probe.isAccessible) NeonGreen.copy(alpha = 0.08f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.3f),
+                                        border = BorderStroke(0.5.dp, if (probe.isAccessible) NeonGreen.copy(alpha = 0.4f) else MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f))
+                                    ) {
+                                        Row(
+                                            modifier = Modifier.padding(horizontal = 6.dp, vertical = 5.dp),
+                                            verticalAlignment = Alignment.CenterVertically,
+                                            horizontalArrangement = Arrangement.SpaceBetween
+                                        ) {
+                                            Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.weight(1f)) {
+                                                Text(probe.service.iconEmoji, fontSize = 12.sp)
+                                                Spacer(modifier = Modifier.width(4.dp))
+                                                Text(
+                                                    text = probe.service.name,
+                                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 11.sp),
+                                                    color = MaterialTheme.colorScheme.onSurface,
+                                                    maxLines = 1
+                                                )
+                                            }
+                                            if (probe.isAccessible) {
+                                                Text(
+                                                    text = "${probe.latencyMs ?: 0}ms",
+                                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold, fontSize = 10.sp),
+                                                    color = NeonGreen
+                                                )
+                                            } else {
+                                                Text(
+                                                    text = "Blocked",
+                                                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                                                    color = MaterialTheme.colorScheme.error.copy(alpha = 0.8f)
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
+                                if (rowServices.size == 1) {
+                                    Spacer(modifier = Modifier.weight(1f))
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+        }
 
         // Best Evolved Genome Card
         progress.bestGenome?.let { best ->

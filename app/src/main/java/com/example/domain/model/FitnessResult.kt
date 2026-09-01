@@ -1,7 +1,7 @@
 package com.example.domain.model
 
 /**
- * Result of latency and reliability ping evaluation for a given configuration.
+ * Result of latency, reliability ping evaluation, and blocked services reachability.
  */
 data class FitnessResult(
     val genomeId: String,
@@ -12,5 +12,8 @@ data class FitnessResult(
     val fitnessScore: Double,
     val testedUrls: List<String> = emptyList(),
     val isReachable: Boolean = successRate > 0.0,
-    val errorMessage: String? = null
+    val errorMessage: String? = null,
+    val serviceResults: List<ServiceProbeResult> = emptyList(),
+    val unblockedServicesCount: Int = 0,
+    val totalServicesCount: Int = 0
 )
