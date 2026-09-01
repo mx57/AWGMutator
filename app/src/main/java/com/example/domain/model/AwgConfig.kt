@@ -76,13 +76,13 @@ data class AwgConfig(
             builder.appendLine("MTU = $mtu")
         }
 
-        if (jc > 0) builder.appendLine("Jc = $jc")
-        if (jmin > 0) builder.appendLine("Jmin = $jmin")
-        if (jmax > 0) builder.appendLine("Jmax = $jmax")
-
-        val isCloudflareWarpPeer = isWarp || peerPublicKey.trim() == "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo="
+        val isCloudflareWarpPeer = isWarp || peerPublicKey.trim() == "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=" || !reserved.isNullOrBlank()
 
         if (!isCloudflareWarpPeer) {
+            if (jc > 0) builder.appendLine("Jc = $jc")
+            if (jmin > 0) builder.appendLine("Jmin = $jmin")
+            if (jmax > 0) builder.appendLine("Jmax = $jmax")
+
             val effectiveS1 = if (s1 > 0) s1 else extractByteLengthFromHexPayload(i1)
             val effectiveS2 = if (s2 > 0) s2 else extractByteLengthFromHexPayload(i2)
 
@@ -93,7 +93,7 @@ data class AwgConfig(
         }
 
         val effectiveH1 = if (isCloudflareWarpPeer) {
-            1L
+            calculateWarpH1(reserved)
         } else {
             if (h1 > 0L) h1 else 1L
         }
