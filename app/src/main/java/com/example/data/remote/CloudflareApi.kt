@@ -12,6 +12,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.suspendCancellableCoroutine
+import okhttp3.CertificatePinner
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.MediaType.Companion.toMediaType
@@ -216,16 +217,17 @@ open class CloudflareApi(
             put("type", "Android")
         }
 
-                    val regResponse = client.newCall(reqBuilder.build()).await()
-                    val regCode = regResponse.code
-                    val regBody = regResponse.body?.string().orEmpty()
-                    regResponse.close()
+        val reqBuilder = Request.Builder()
+            .url("${mirror.url}/reg")
+            .post(regBodyJson.toString().toRequestBody(jsonMediaType))
+            .header("User-Agent", "okhttp/3.12.1")
+            .header("CF-Client-Version", "a-6.30-3900")
 
         if (mirror.hostHeader != null) {
             reqBuilder.addHeader("Host", mirror.hostHeader)
         }
 
-        val regResponse = client.newCall(reqBuilder.build()).execute()
+        val regResponse = client.newCall(reqBuilder.build()).await()
         val regCode = regResponse.code
         val regBody = regResponse.body?.string().orEmpty()
         regResponse.close()
@@ -250,7 +252,7 @@ open class CloudflareApi(
         return RegistrationResult(regJson, accountId, accessToken, keyPair)
     }
 
-    private fun enableWarpAccount(
+    private suspend fun enableWarpAccount(
         mirror: CloudflareMirror,
         accountId: String,
         accessToken: String,
@@ -263,15 +265,18 @@ open class CloudflareApi(
             }
         }
 
-                    val patchResponse = client.newCall(patchBuilder.build()).await()
-                    val patchBody = patchResponse.body?.string().orEmpty()
-                    patchResponse.close()
+        val patchBuilder = Request.Builder()
+            .url("${mirror.url}/reg/$accountId")
+            .patch(enableBodyJson.toString().toRequestBody(jsonMediaType))
+            .header("User-Agent", "okhttp/3.12.1")
+            .header("Authorization", "Bearer $accessToken")
+            .header("CF-Client-Version", "a-6.30-3900")
 
         if (mirror.hostHeader != null) {
             patchBuilder.addHeader("Host", mirror.hostHeader)
         }
 
-        val patchResponse = client.newCall(patchBuilder.build()).execute()
+        val patchResponse = client.newCall(patchBuilder.build()).await()
         val patchBody = patchResponse.body?.string().orEmpty()
         patchResponse.close()
 
