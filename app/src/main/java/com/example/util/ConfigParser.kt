@@ -213,6 +213,15 @@ object ConfigParser {
             if (data.h3 == 0L) data.h3 = 3L
             if (data.h4 == 0L) data.h4 = 4L
 
+            data.s1 = 0
+            data.s2 = 0
+            data.s3 = 0
+            data.s4 = 0
+            data.i1 = null
+            data.i2 = null
+            data.i3 = null
+            data.i4 = null
+
             if (data.jc == 0) {
                 data.jc = 4
                 data.jmin = 40

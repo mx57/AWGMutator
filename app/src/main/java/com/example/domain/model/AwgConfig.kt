@@ -80,16 +80,20 @@ data class AwgConfig(
         if (jmin > 0) builder.appendLine("Jmin = $jmin")
         if (jmax > 0) builder.appendLine("Jmax = $jmax")
 
-        val effectiveS1 = if (s1 > 0) s1 else extractByteLengthFromHexPayload(i1)
-        val effectiveS2 = if (s2 > 0) s2 else extractByteLengthFromHexPayload(i2)
+        val isCloudflareWarpPeer = isWarp || peerPublicKey.trim() == "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo="
 
-        if (effectiveS1 > 0) builder.appendLine("S1 = $effectiveS1")
-        if (effectiveS2 > 0) builder.appendLine("S2 = $effectiveS2")
-        if (s3 > 0) builder.appendLine("S3 = $s3")
-        if (s4 > 0) builder.appendLine("S4 = $s4")
+        if (!isCloudflareWarpPeer) {
+            val effectiveS1 = if (s1 > 0) s1 else extractByteLengthFromHexPayload(i1)
+            val effectiveS2 = if (s2 > 0) s2 else extractByteLengthFromHexPayload(i2)
+
+            if (effectiveS1 > 0) builder.appendLine("S1 = $effectiveS1")
+            if (effectiveS2 > 0) builder.appendLine("S2 = $effectiveS2")
+            if (s3 > 0) builder.appendLine("S3 = $s3")
+            if (s4 > 0) builder.appendLine("S4 = $s4")
+        }
 
         val warpH1 = calculateWarpH1(reserved)
-        val effectiveH1 = if ((isWarp || !reserved.isNullOrBlank()) && h1 <= 4L) {
+        val effectiveH1 = if ((isCloudflareWarpPeer || !reserved.isNullOrBlank()) && h1 <= 4L) {
             val calc = calculateWarpH1(reserved)
             if (calc != 1L) calc else h1
         } else {
@@ -103,10 +107,12 @@ data class AwgConfig(
         if (effectiveH2 > 0L) builder.appendLine("H2 = $effectiveH2")
         if (effectiveH3 > 0L) builder.appendLine("H3 = $effectiveH3")
         if (effectiveH4 > 0L) builder.appendLine("H4 = $effectiveH4")
-        if (!i1.isNullOrBlank()) builder.appendLine("I1 = ${formatHexPayload(i1)}")
-        if (!i2.isNullOrBlank()) builder.appendLine("I2 = ${formatHexPayload(i2)}")
-        if (!i3.isNullOrBlank()) builder.appendLine("I3 = ${formatHexPayload(i3)}")
-        if (!i4.isNullOrBlank()) builder.appendLine("I4 = ${formatHexPayload(i4)}")
+        if (!isCloudflareWarpPeer) {
+            if (!i1.isNullOrBlank()) builder.appendLine("I1 = ${formatHexPayload(i1)}")
+            if (!i2.isNullOrBlank()) builder.appendLine("I2 = ${formatHexPayload(i2)}")
+            if (!i3.isNullOrBlank()) builder.appendLine("I3 = ${formatHexPayload(i3)}")
+            if (!i4.isNullOrBlank()) builder.appendLine("I4 = ${formatHexPayload(i4)}")
+        }
         if (!sni.isNullOrBlank()) builder.appendLine("SNI = $sni")
         if (!reserved.isNullOrBlank()) {
             val cleanReserved = com.example.data.remote.CloudflareApi.normalizeReserved(reserved)
@@ -119,7 +125,17 @@ data class AwgConfig(
         if (!presharedKey.isNullOrBlank()) {
             builder.appendLine("PresharedKey = $presharedKey")
         }
-        val cleanAllowed = if (allowedIps.isNotBlank()) allowedIps.trim() else "0.0.0.0/0, ::/0"
+        val hasIpv6InAddress = cleanAddr.contains(":")
+        val rawAllowed = if (allowedIps.isNotBlank()) allowedIps.trim() else "0.0.0.0/0, ::/0"
+        val cleanAllowed = if (!hasIpv6InAddress) {
+            rawAllowed.split(",")
+                .map { it.trim() }
+                .filter { it.isNotBlank() && !it.contains(":") }
+                .joinToString(", ")
+                .ifBlank { "0.0.0.0/0" }
+        } else {
+            rawAllowed
+        }
         builder.appendLine("AllowedIPs = $cleanAllowed")
         val cleanEndpoint = sanitizeEndpoint(endpoint, defaultPort = if (isWarp) 854 else 51820)
         builder.appendLine("Endpoint = $cleanEndpoint")
