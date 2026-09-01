@@ -93,7 +93,7 @@ data class AwgConfig(
         }
 
         val effectiveH1 = if (isCloudflareWarpPeer) {
-            1L
+            calculateWarpH1(reserved)
         } else {
             if (h1 > 0L) h1 else 1L
         }
