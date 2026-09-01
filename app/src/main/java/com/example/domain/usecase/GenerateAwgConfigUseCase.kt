@@ -3,7 +3,7 @@ package com.example.domain.usecase
 import com.example.domain.model.AwgConfig
 import com.example.domain.repository.ConfigRepository
 import com.example.util.WireGuardKeyGen
-import java.util.Random
+import java.security.SecureRandom
 import java.util.UUID
 
 enum class ObfuscationPreset {
@@ -23,7 +23,7 @@ enum class ObfuscationPreset {
 class GenerateAwgConfigUseCase(
     private val configRepository: ConfigRepository
 ) {
-    private val random = Random()
+    private val random = SecureRandom()
 
     suspend operator fun invoke(
         name: String = "AmneziaWG Custom",
