@@ -313,7 +313,7 @@ class ConfigsViewModel(
             _uiState.value = _uiState.value.copy(isGenerating = true)
             val result = generateAwgUseCase(
                 name = name.ifBlank { "Custom AWG" },
-                endpoint = endpoint.ifBlank { "188.114.97.1:854" },
+                endpoint = endpoint.ifBlank { "188.114.97.1:1074" },
                 peerPublicKey = peerKey.ifBlank { "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=" },
                 dns = dns.ifBlank { "1.1.1.1, 8.8.8.8, 1.0.0.1" },
                 preset = preset,

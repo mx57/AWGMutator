@@ -38,8 +38,10 @@ import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Security
 import androidx.compose.material.icons.filled.Shield
 import androidx.compose.material.icons.filled.Speed
+import androidx.compose.material.icons.filled.Troubleshoot
 import androidx.compose.material.icons.filled.Tune
 import androidx.compose.material.icons.filled.Warning
+import com.example.presentation.dashboard.components.TunnelDiagnosticsDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
@@ -402,6 +404,17 @@ fun DashboardScreen(
                         Spacer(modifier = Modifier.width(6.dp))
                         Text("⚡ Ротировать на следующий чистый эндпоинт", fontWeight = FontWeight.Bold)
                     }
+                    Spacer(modifier = Modifier.height(6.dp))
+                    OutlinedButton(
+                        onClick = { viewModel.openDiagnostics() },
+                        border = BorderStroke(1.dp, DangerRed),
+                        shape = RoundedCornerShape(8.dp),
+                        modifier = Modifier.fillMaxWidth()
+                    ) {
+                        Icon(Icons.Default.Troubleshoot, contentDescription = null, tint = DangerRed, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("🔬 Запустить глубокую диагностику сети & ТСПУ", color = DangerRed, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+                    }
                     Spacer(modifier = Modifier.height(8.dp))
                     Row(
                         modifier = Modifier.fillMaxWidth(),
@@ -631,6 +644,31 @@ fun DashboardScreen(
             Spacer(modifier = Modifier.width(6.dp))
             Text("Launch Genetic Algorithm Evolution Engine", color = CyberCyan, style = MaterialTheme.typography.labelMedium)
         }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Button(
+            onClick = { viewModel.openDiagnostics() },
+            modifier = Modifier
+                .fillMaxWidth()
+                .testTag("open_diagnostics_button"),
+            shape = RoundedCornerShape(10.dp),
+            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.surfaceVariant, contentColor = CyberCyan),
+            border = BorderStroke(1.dp, CyberCyan)
+        ) {
+            Icon(imageVector = Icons.Default.Troubleshoot, contentDescription = null, tint = CyberCyan, modifier = Modifier.size(16.dp))
+            Spacer(modifier = Modifier.width(6.dp))
+            Text("🔬 Диагностика сети, ключей и блокировок ТСПУ", fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelMedium)
+        }
+    }
+
+    if (uiState.showDiagnosticsDialog) {
+        TunnelDiagnosticsDialog(
+            report = uiState.diagnosticReport,
+            onDismiss = { viewModel.closeDiagnostics() },
+            onRunDiagnostics = { viewModel.runDiagnostics() },
+            onApplyAction = { action, payload -> viewModel.handleDiagnosticAction(action, payload) }
+        )
     }
 }
 

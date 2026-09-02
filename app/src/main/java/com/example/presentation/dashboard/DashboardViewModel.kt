@@ -14,8 +14,11 @@ import com.example.domain.model.ServiceProbeResult
 import com.example.domain.model.VpnState
 import com.example.domain.model.VpnStatus
 import com.example.domain.repository.ConfigRepository
+import com.example.domain.model.DiagnosticActionType
+import com.example.domain.model.TunnelDiagnosticReport
 import com.example.domain.usecase.GenerateHybridWarpAwgUseCase
 import com.example.domain.usecase.GenerateWarpConfigUseCase
+import com.example.domain.usecase.RunTunnelDiagnosticsUseCase
 import com.example.util.RootRunner
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
@@ -34,6 +37,8 @@ data class DashboardUiState(
     val isTestingSpeed: Boolean = false,
     val isTestingServices: Boolean = false,
     val isVerifyingEgress: Boolean = false,
+    val showDiagnosticsDialog: Boolean = false,
+    val diagnosticReport: TunnelDiagnosticReport = TunnelDiagnosticReport(),
     val selectedConfig: AwgConfig? = null,
     val measuredPingMs: Long? = null,
     val egressResult: NetworkEgressResult? = null,
@@ -51,7 +56,8 @@ class DashboardViewModel(
     private val generateHybridUseCase: GenerateHybridWarpAwgUseCase = GenerateHybridWarpAwgUseCase(
         App.instance.cloudflareApi,
         App.instance.configRepository
-    )
+    ),
+    private val runTunnelDiagnosticsUseCase: RunTunnelDiagnosticsUseCase = RunTunnelDiagnosticsUseCase()
 ) : ViewModel() {
 
     // Merge standard VPN and Root VPN statuses
@@ -340,5 +346,118 @@ class DashboardViewModel(
 
     fun setTrafficMonitoringEnabled(enabled: Boolean) {
         App.instance.appTrafficTracker.setMonitoringEnabled(enabled)
+    }
+
+    fun openDiagnostics() {
+        _uiState.value = _uiState.value.copy(showDiagnosticsDialog = true)
+        runDiagnostics()
+    }
+
+    fun closeDiagnostics() {
+        _uiState.value = _uiState.value.copy(showDiagnosticsDialog = false)
+    }
+
+    fun runDiagnostics() {
+        val currentConfig = _uiState.value.selectedConfig ?: configs.value.firstOrNull()
+        viewModelScope.launch {
+            runTunnelDiagnosticsUseCase.execute(currentConfig).collect { report ->
+                _uiState.value = _uiState.value.copy(diagnosticReport = report)
+            }
+        }
+    }
+
+    fun handleDiagnosticAction(action: DiagnosticActionType, payload: String?) {
+        val currentConfig = _uiState.value.selectedConfig ?: configs.value.firstOrNull() ?: return
+        viewModelScope.launch(Dispatchers.IO) {
+            when (action) {
+                DiagnosticActionType.APPLY_ENDPOINT -> {
+                    val newEp = payload ?: "188.114.97.1:1074"
+                    val updated = currentConfig.copy(endpoint = newEp)
+                    configRepository.updateConfig(updated)
+                    withContext(Dispatchers.Main) {
+                        _uiState.value = _uiState.value.copy(
+                            selectedConfig = updated,
+                            userMessage = "✓ Применен рабочий эндпоинт $newEp. Переподключение..."
+                        )
+                    }
+                    if (App.instance.tunnelManager.status.value.state == VpnState.CONNECTED) {
+                        App.instance.tunnelManager.disconnect()
+                        kotlinx.coroutines.delay(600)
+                        App.instance.tunnelManager.connect(updated)
+                    }
+                    runDiagnostics()
+                }
+                DiagnosticActionType.SWITCH_IPV4_ONLY -> {
+                    val cleanAddr = currentConfig.address.split(",")
+                        .map { it.trim() }
+                        .filter { !it.contains(":") }
+                        .joinToString(", ")
+                        .ifBlank { "172.16.0.2/32" }
+                    val cleanAllowed = "0.0.0.0/0"
+                    val updated = currentConfig.copy(
+                        address = cleanAddr,
+                        allowedIps = cleanAllowed
+                    )
+                    configRepository.updateConfig(updated)
+                    withContext(Dispatchers.Main) {
+                        _uiState.value = _uiState.value.copy(
+                            selectedConfig = updated,
+                            userMessage = "✓ Включен режим 'Только IPv4'. Переподключение..."
+                        )
+                    }
+                    if (App.instance.tunnelManager.status.value.state == VpnState.CONNECTED) {
+                        App.instance.tunnelManager.disconnect()
+                        kotlinx.coroutines.delay(600)
+                        App.instance.tunnelManager.connect(updated)
+                    }
+                    runDiagnostics()
+                }
+                DiagnosticActionType.REGENERATE_WARP_ACCOUNT -> {
+                    withContext(Dispatchers.Main) {
+                        _uiState.value = _uiState.value.copy(
+                            userMessage = "Генерация нового WARP аккаунта с Reserved токеном..."
+                        )
+                    }
+                    val result = generateWarpUseCase()
+                    result.onSuccess { newConfig ->
+                        withContext(Dispatchers.Main) {
+                            _uiState.value = _uiState.value.copy(
+                                selectedConfig = newConfig,
+                                userMessage = "✓ WARP аккаунт успешно создан: ${newConfig.name}"
+                            )
+                        }
+                        if (App.instance.tunnelManager.status.value.state == VpnState.CONNECTED) {
+                            App.instance.tunnelManager.disconnect()
+                            kotlinx.coroutines.delay(600)
+                            App.instance.tunnelManager.connect(newConfig)
+                        }
+                        runDiagnostics()
+                    }
+                }
+                DiagnosticActionType.REPAIR_MTU_1280 -> {
+                    val updated = currentConfig.copy(mtu = 1280)
+                    configRepository.updateConfig(updated)
+                    withContext(Dispatchers.Main) {
+                        _uiState.value = _uiState.value.copy(
+                            selectedConfig = updated,
+                            userMessage = "✓ MTU установлен на 1280 (Anti-DPI)"
+                        )
+                    }
+                    if (App.instance.tunnelManager.status.value.state == VpnState.CONNECTED) {
+                        App.instance.tunnelManager.disconnect()
+                        kotlinx.coroutines.delay(600)
+                        App.instance.tunnelManager.connect(updated)
+                    }
+                    runDiagnostics()
+                }
+                DiagnosticActionType.RECONNECT -> {
+                    App.instance.tunnelManager.disconnect()
+                    kotlinx.coroutines.delay(600)
+                    App.instance.tunnelManager.connect(currentConfig)
+                    runDiagnostics()
+                }
+                DiagnosticActionType.NONE -> {}
+            }
+        }
     }
 }

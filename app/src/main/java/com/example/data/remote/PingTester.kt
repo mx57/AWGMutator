@@ -143,7 +143,7 @@ class PingTester(
             )
         }
 
-        // Tier 1: Real UDP WireGuard / AmneziaWG handshake initiation probe
+        // Accurate UDP WireGuard / AmneziaWG handshake initiation probe
         val probe = com.example.util.WireGuardProbe.probeEndpoint(
             host = host,
             port = port,
@@ -151,8 +151,8 @@ class PingTester(
             clientPrivateKeyBase64 = clientPrivateKey,
             h1 = h1,
             s1 = s1,
-            timeoutMs = 900,
-            attempts = 1
+            timeoutMs = 1100,
+            attempts = 2
         )
 
         if (probe.isReachable && probe.latencyMs != null) {
@@ -164,22 +164,11 @@ class PingTester(
             )
         }
 
-        // Tier 2: Real UDP / STUN / Socket reachability probe for Anycast Edge IPs
-        val fallbackLatency = probeUdpOrSocket(host, port, timeoutMs = 850)
-        if (fallbackLatency != null && fallbackLatency > 0) {
-            return@withContext EndpointProbeResult(
-                endpoint = endpoint,
-                isReachable = true,
-                latencyMs = fallbackLatency,
-                error = null
-            )
-        }
-
         EndpointProbeResult(
             endpoint = endpoint,
             isReachable = false,
             latencyMs = null,
-            error = probe.error ?: "Таймаут опроса эндпоинта"
+            error = probe.error ?: "UDP пакеты отброшены (блокировка ТСПУ/провайдера)"
         )
     }
 
