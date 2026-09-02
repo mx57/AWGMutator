@@ -12,6 +12,11 @@ class GenerateWarpConfigUseCase(
     private val cloudflareApi: CloudflareApi,
     private val configRepository: ConfigRepository
 ) {
+    /**
+     * Executes the WARP configuration generation workflow.
+     * Invoked via Kotlin operator syntax `generateWarpUseCase(...)`.
+     */
+    @Suppress("unused")
     suspend operator fun invoke(
         customName: String = "Cloudflare WARP Auto",
         licenseKey: String? = null,
