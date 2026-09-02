@@ -78,38 +78,33 @@ data class AwgConfig(
 
         val isCloudflarePeer = isWarp || !reserved.isNullOrBlank() || peerPublicKey.trim() == "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo="
 
-        if (!isCloudflarePeer) {
-            if (jc > 0) builder.appendLine("Jc = $jc")
-            if (jmin > 0) builder.appendLine("Jmin = $jmin")
-            if (jmax > 0) builder.appendLine("Jmax = $jmax")
+        if (jc > 0) builder.appendLine("Jc = $jc")
+        if (jmin > 0) builder.appendLine("Jmin = $jmin")
+        if (jmax > 0) builder.appendLine("Jmax = $jmax")
 
-            val effectiveS1 = if (s1 > 0) s1 else extractByteLengthFromHexPayload(i1)
-            val effectiveS2 = if (s2 > 0) s2 else extractByteLengthFromHexPayload(i2)
+        val effectiveS1 = if (s1 > 0) s1 else extractByteLengthFromHexPayload(i1)
+        val effectiveS2 = if (s2 > 0) s2 else extractByteLengthFromHexPayload(i2)
 
-            if (effectiveS1 > 0) builder.appendLine("S1 = $effectiveS1")
-            if (effectiveS2 > 0) builder.appendLine("S2 = $effectiveS2")
-            if (s3 > 0) builder.appendLine("S3 = $s3")
-            if (s4 > 0) builder.appendLine("S4 = $s4")
-        }
+        if (effectiveS1 > 0) builder.appendLine("S1 = $effectiveS1")
+        if (effectiveS2 > 0) builder.appendLine("S2 = $effectiveS2")
+        if (s3 > 0) builder.appendLine("S3 = $s3")
+        if (s4 > 0) builder.appendLine("S4 = $s4")
 
-        val effectiveH1 = if (isCloudflarePeer) {
-            calculateWarpH1(reserved)
-        } else {
-            if (h1 > 0L) h1 else 1L
-        }
-        val effectiveH2 = if (isCloudflarePeer) 2L else if (h2 > 0L) h2 else 2L
-        val effectiveH3 = if (isCloudflarePeer) 3L else if (h3 > 0L) h3 else 3L
-        val effectiveH4 = if (isCloudflarePeer) 4L else if (h4 > 0L) h4 else 4L
+        val warpH1 = if (!reserved.isNullOrBlank()) calculateWarpH1(reserved) else 1L
+        val effectiveH1 = if (h1 > 0L && h1 != 1L) h1 else if (warpH1 > 0L) warpH1 else 1L
+        val effectiveH2 = if (h2 > 0L) h2 else 2L
+        val effectiveH3 = if (h3 > 0L) h3 else 3L
+        val effectiveH4 = if (h4 > 0L) h4 else 4L
 
         if (effectiveH1 > 0L) builder.appendLine("H1 = $effectiveH1")
         if (effectiveH2 > 0L) builder.appendLine("H2 = $effectiveH2")
         if (effectiveH3 > 0L) builder.appendLine("H3 = $effectiveH3")
         if (effectiveH4 > 0L) builder.appendLine("H4 = $effectiveH4")
-        if (!isCloudflarePeer && !i1.isNullOrBlank()) builder.appendLine("I1 = ${formatHexPayload(i1)}")
-        if (!isCloudflarePeer && !i2.isNullOrBlank()) builder.appendLine("I2 = ${formatHexPayload(i2)}")
-        if (!isCloudflarePeer && !i3.isNullOrBlank()) builder.appendLine("I3 = ${formatHexPayload(i3)}")
-        if (!isCloudflarePeer && !i4.isNullOrBlank()) builder.appendLine("I4 = ${formatHexPayload(i4)}")
-        if (!isCloudflarePeer && !sni.isNullOrBlank()) builder.appendLine("SNI = $sni")
+        if (!i1.isNullOrBlank()) builder.appendLine("I1 = ${formatHexPayload(i1)}")
+        if (!i2.isNullOrBlank()) builder.appendLine("I2 = ${formatHexPayload(i2)}")
+        if (!i3.isNullOrBlank()) builder.appendLine("I3 = ${formatHexPayload(i3)}")
+        if (!i4.isNullOrBlank()) builder.appendLine("I4 = ${formatHexPayload(i4)}")
+        if (!sni.isNullOrBlank()) builder.appendLine("SNI = $sni")
         if (!reserved.isNullOrBlank()) {
             val cleanReserved = com.example.data.remote.CloudflareApi.normalizeReserved(reserved)
             builder.appendLine("Reserved = $cleanReserved")
