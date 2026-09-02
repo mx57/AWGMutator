@@ -236,7 +236,7 @@ class TunnelManager(private val context: Context) {
                 mtu = if (rawConfig.mtu in 1200..1420) rawConfig.mtu else 1280,
                 dns = cleanDns,
                 allowedIps = cleanAllowedIps,
-                endpoint = rawConfig.endpoint.ifBlank { "188.114.97.1:1074" },
+                endpoint = rawConfig.endpoint.ifBlank { "162.159.130.1:1074" },
                 isWarp = true
             )
         } else {
@@ -259,7 +259,7 @@ class TunnelManager(private val context: Context) {
                 mtu = if (rawConfig.mtu in 1200..1420) rawConfig.mtu else 1280,
                 dns = cleanDns,
                 allowedIps = cleanAllowedIps,
-                endpoint = rawConfig.endpoint.ifBlank { "188.114.97.1:1074" },
+                endpoint = rawConfig.endpoint.ifBlank { "162.159.130.1:1074" },
                 isWarp = false
             )
         }

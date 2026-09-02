@@ -24,16 +24,22 @@ class GenerateWarpConfigUseCase(
             val warpConfig = warpResult.getOrThrow()
             var awgConfig = warpConfig.toAwgConfig(customName)
 
-            if (!endpoint.isNullOrBlank()) {
-                awgConfig = awgConfig.copy(endpoint = endpoint)
+            val safeEndpoint = if (!endpoint.isNullOrBlank()) {
+                endpoint
+            } else if (awgConfig.endpoint.contains("188.114.") || awgConfig.endpoint.contains("162.159.192.") || awgConfig.endpoint.contains("162.159.193.")) {
+                "162.159.130.1:1074"
+            } else {
+                awgConfig.endpoint.ifBlank { "162.159.130.1:1074" }
             }
+
             val warpH1 = AwgConfig.calculateWarpH1(awgConfig.reserved)
             awgConfig = awgConfig.copy(
                 dns = dns,
                 mtu = mtu,
-                jc = 0,
-                jmin = 0,
-                jmax = 0,
+                endpoint = safeEndpoint,
+                jc = 4,
+                jmin = 40,
+                jmax = 70,
                 s1 = 0,
                 s2 = 0,
                 s3 = 0,

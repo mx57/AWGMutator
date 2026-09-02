@@ -135,7 +135,7 @@ class GenerateHybridWarpAwgUseCaseTest {
 
         assertTrue(result.isSuccess)
         val hybridConfig = result.getOrThrow()
-        assertEquals("188.114.97.1:1074", hybridConfig.endpoint)
+        assertEquals("162.159.130.1:1074", hybridConfig.endpoint)
     }
 
     @Test

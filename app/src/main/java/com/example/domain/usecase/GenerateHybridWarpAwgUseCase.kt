@@ -22,10 +22,16 @@ class GenerateHybridWarpAwgUseCase(
             val warpConfig = warpResult.getOrThrow()
             val baseAwg = warpConfig.toAwgConfig(customName)
 
+            val safeEndpoint = if (baseAwg.endpoint.isBlank() || baseAwg.endpoint.contains("188.114.") || baseAwg.endpoint.contains("162.159.192.") || baseAwg.endpoint.contains("162.159.193.")) {
+                "162.159.130.1:1074"
+            } else {
+                baseAwg.endpoint
+            }
+
             val warpH1 = AwgConfig.calculateWarpH1(baseAwg.reserved)
             val hybrid = baseAwg.copy(
                 dns = dns,
-                endpoint = baseAwg.endpoint.ifBlank { "188.114.97.1:1074" },
+                endpoint = safeEndpoint,
                 mtu = 1280,
                 jc = 4,
                 jmin = 40,

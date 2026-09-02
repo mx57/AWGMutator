@@ -27,7 +27,7 @@ class GenerateAwgConfigUseCase(
 
     suspend operator fun invoke(
         name: String = "AmneziaWG Custom",
-        endpoint: String = "188.114.97.1:1074",
+        endpoint: String = "162.159.130.1:1074",
         peerPublicKey: String = "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=",
         presharedKey: String? = null,
         address: String = "172.16.0.2/32",
@@ -73,11 +73,18 @@ class GenerateAwgConfigUseCase(
             val i1 = generateI1Noise(preset, customI1)
 
             val isCloudflareWarpPeer = isWarp
-            val effectiveH1 = if (isCloudflareWarpPeer && customH1 == null) 1L else obfuscation.h1
-            val effectiveH2 = if (isCloudflareWarpPeer && customH2 == null) 2L else obfuscation.h2
-            val effectiveH3 = if (isCloudflareWarpPeer && customH3 == null) 3L else obfuscation.h3
-            val effectiveH4 = if (isCloudflareWarpPeer && customH4 == null) 4L else obfuscation.h4
-            val effectiveJc = if (isCloudflareWarpPeer && customJc == null) 0 else obfuscation.jc.coerceIn(0, 10)
+            val warpH1 = if (reserved != null) AwgConfig.calculateWarpH1(reserved) else 1L
+            val effectiveH1 = if (customH1 != null) customH1 else if (isCloudflareWarpPeer && warpH1 > 1L) warpH1 else obfuscation.h1
+            val effectiveH2 = if (customH2 != null) customH2 else obfuscation.h2
+            val effectiveH3 = if (customH3 != null) customH3 else obfuscation.h3
+            val effectiveH4 = if (customH4 != null) customH4 else obfuscation.h4
+            val effectiveJc = obfuscation.jc.coerceIn(1, 10)
+
+            val safeEndpoint = if (endpoint.isBlank() || endpoint.contains("188.114.") || endpoint.contains("162.159.192.") || endpoint.contains("162.159.193.")) {
+                "162.159.130.1:1074"
+            } else {
+                endpoint
+            }
 
             val config = AwgConfig(
                 id = UUID.randomUUID().toString(),
@@ -87,21 +94,21 @@ class GenerateAwgConfigUseCase(
                 dns = dns,
                 mtu = mtu.coerceIn(1280, 1420),
                 jc = effectiveJc,
-                jmin = if (isCloudflareWarpPeer && customJmin == null) 0 else obfuscation.jmin.coerceIn(0, 1024),
-                jmax = if (isCloudflareWarpPeer && customJmax == null) 0 else obfuscation.jmax.coerceIn(obfuscation.jmin.coerceIn(0, 1024), 1024),
-                s1 = if (isCloudflareWarpPeer && customS1 == null) 0 else obfuscation.s1.coerceIn(0, 64),
-                s2 = if (isCloudflareWarpPeer && customS2 == null) 0 else obfuscation.s2.coerceIn(0, 64),
-                s3 = if (isCloudflareWarpPeer && customS3 == null) 0 else obfuscation.s3.coerceIn(0, 64),
-                s4 = if (isCloudflareWarpPeer && customS4 == null) 0 else obfuscation.s4.coerceIn(0, 32),
+                jmin = obfuscation.jmin.coerceIn(40, 1024),
+                jmax = obfuscation.jmax.coerceIn(obfuscation.jmin.coerceIn(40, 1024), 1024),
+                s1 = obfuscation.s1.coerceIn(0, 64),
+                s2 = obfuscation.s2.coerceIn(0, 64),
+                s3 = obfuscation.s3.coerceIn(0, 64),
+                s4 = obfuscation.s4.coerceIn(0, 32),
                 h1 = effectiveH1,
                 h2 = effectiveH2,
                 h3 = effectiveH3,
                 h4 = effectiveH4,
-                i1 = if (isCloudflareWarpPeer && customI1 == null) null else i1,
+                i1 = i1,
                 sni = customSni,
                 peerPublicKey = effectivePeerKey,
                 presharedKey = presharedKey,
-                endpoint = endpoint,
+                endpoint = safeEndpoint,
                 persistentKeepalive = 25,
                 isWarp = isCloudflareWarpPeer,
                 reserved = reserved,
