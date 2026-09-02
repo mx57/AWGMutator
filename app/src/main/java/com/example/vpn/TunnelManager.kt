@@ -205,7 +205,7 @@ class TunnelManager(private val context: Context) {
     }
 
     private fun prepareConfig(rawConfig: AwgConfig): Pair<AwgConfig, Boolean> {
-        val isCloudflareWarp = rawConfig.isWarp || !rawConfig.reserved.isNullOrBlank()
+        val isCloudflareWarp = rawConfig.isWarp || !rawConfig.reserved.isNullOrBlank() || rawConfig.peerPublicKey.trim() == "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo="
 
         var cleanDns = rawConfig.dns
         if (cleanDns.isBlank() || cleanDns.contains("0.0.0.0")) {
@@ -214,18 +214,14 @@ class TunnelManager(private val context: Context) {
 
         val cleanAllowedIps = rawConfig.allowedIps.ifBlank { "0.0.0.0/0, ::/0" }
 
-        val warpH1 = if (!rawConfig.reserved.isNullOrBlank() && (rawConfig.h1 == 0L || rawConfig.h1 == 1L)) {
-            AwgConfig.calculateWarpH1(rawConfig.reserved)
-        } else {
-            if (rawConfig.h1 > 0L) rawConfig.h1 else 1L
-        }
+        val warpH1 = AwgConfig.calculateWarpH1(rawConfig.reserved)
 
         val preparedConfig = if (isCloudflareWarp) {
             rawConfig.copy(
                 h1 = warpH1,
-                h2 = if (rawConfig.h2 > 0L) rawConfig.h2 else 2L,
-                h3 = if (rawConfig.h3 > 0L) rawConfig.h3 else 3L,
-                h4 = if (rawConfig.h4 > 0L) rawConfig.h4 else 4L,
+                h2 = 2L,
+                h3 = 3L,
+                h4 = 4L,
                 jc = 0,
                 jmin = 0,
                 jmax = 0,
@@ -233,6 +229,10 @@ class TunnelManager(private val context: Context) {
                 s2 = 0,
                 s3 = 0,
                 s4 = 0,
+                i1 = null,
+                i2 = null,
+                i3 = null,
+                i4 = null,
                 mtu = if (rawConfig.mtu in 1200..1420) rawConfig.mtu else 1280,
                 dns = cleanDns,
                 allowedIps = cleanAllowedIps,

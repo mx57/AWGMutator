@@ -5,6 +5,7 @@ import android.content.Intent
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.App
+import com.example.domain.model.AwgConfig
 import com.example.domain.model.DiagnosticActionType
 import com.example.domain.model.EndpointProbeDetail
 import com.example.domain.model.LogDiagnosticReport
@@ -289,8 +290,13 @@ class LogViewerViewModel : ViewModel() {
 
             val peerPubKey = activeConfig?.peerPublicKey ?: WireGuardProbe.DEFAULT_CLOUDFLARE_WARP_PUBKEY
             val clientPrivKey = activeConfig?.privateKey
-            val h1 = activeConfig?.h1 ?: 1L
-            val s1 = activeConfig?.s1 ?: 0
+            val isWarp = activeConfig?.isWarp == true || !activeConfig?.reserved.isNullOrBlank() || activeConfig?.peerPublicKey == WireGuardProbe.DEFAULT_CLOUDFLARE_WARP_PUBKEY
+            val h1 = if (isWarp) {
+                AwgConfig.calculateWarpH1(activeConfig?.reserved)
+            } else {
+                activeConfig?.h1 ?: 1L
+            }
+            val s1 = if (isWarp) 0 else (activeConfig?.s1 ?: 0)
 
             val endpoints = parseDiagnosticLogsUseCase.cleanAnycastEndpoints
 

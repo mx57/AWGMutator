@@ -74,7 +74,9 @@ class RunTunnelDiagnosticsUseCase(
         // ================= STAGE 1: Real UDP Handshake Matrix =================
         val peerKey = config?.peerPublicKey?.ifBlank { WireGuardProbe.DEFAULT_CLOUDFLARE_WARP_PUBKEY } ?: WireGuardProbe.DEFAULT_CLOUDFLARE_WARP_PUBKEY
         val privKey = config?.privateKey
-        val h1 = config?.h1 ?: 1L
+        val isWarpPeer = config?.isWarp == true || !config?.reserved.isNullOrBlank() || config?.peerPublicKey == WireGuardProbe.DEFAULT_CLOUDFLARE_WARP_PUBKEY
+        val h1 = if (isWarpPeer) AwgConfig.calculateWarpH1(config?.reserved) else (config?.h1 ?: 1L)
+        val s1 = if (isWarpPeer) 0 else (config?.s1 ?: 0)
 
         val testedDetails: List<EndpointProbeDetail> = coroutineScope {
             candidateEndpoints.map { ep ->
@@ -87,6 +89,7 @@ class RunTunnelDiagnosticsUseCase(
                         peerPublicKeyBase64 = peerKey,
                         clientPrivateKeyBase64 = privKey,
                         h1 = h1,
+                        s1 = s1,
                         timeoutMs = 1200,
                         attempts = 2
                     )

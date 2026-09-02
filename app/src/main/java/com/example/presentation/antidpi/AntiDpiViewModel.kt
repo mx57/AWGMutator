@@ -213,43 +213,74 @@ class AntiDpiViewModel(
 
     fun autoPatchDpiVulnerabilities() {
         val current = _uiState.value.selectedConfig ?: configs.value.firstOrNull() ?: return
+        val isWarp = current.isWarp || !current.reserved.isNullOrBlank() || current.peerPublicKey.trim() == "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo="
 
-        val jmin = 64 + random.nextInt(128)
-        val jmax = jmin + 128 + random.nextInt(256)
-        val jc = 3 + random.nextInt(4)
+        val patched = if (isWarp) {
+            // For Cloudflare WARP: DPI bypass via clean Anycast subnets, unblocked port 1074/500/4500, MTU 1280 and IPv4-Only
+            val warpH1 = AwgConfig.calculateWarpH1(current.reserved)
+            current.copy(
+                name = if (current.name.contains("Anti-DPI")) current.name else "${current.name} (Bypass DPI)",
+                endpoint = if (current.endpoint.isBlank() || current.endpoint.startsWith("162.159.192") || current.endpoint.startsWith("162.159.193")) "188.114.97.1:1074" else current.endpoint,
+                dns = "1.1.1.1, 1.0.0.1, 8.8.8.8",
+                allowedIps = "0.0.0.0/0",
+                mtu = 1280,
+                jc = 0,
+                jmin = 0,
+                jmax = 0,
+                s1 = 0,
+                s2 = 0,
+                s3 = 0,
+                s4 = 0,
+                h1 = warpH1,
+                h2 = 2L,
+                h3 = 3L,
+                h4 = 4L,
+                i1 = null,
+                i2 = null,
+                i3 = null,
+                i4 = null,
+                sni = null,
+                isWarp = true
+            )
+        } else {
+            // For custom AmneziaWG servers: Full header mutation and junk packets
+            val jmin = 64 + random.nextInt(128)
+            val jmax = jmin + 128 + random.nextInt(256)
+            val jc = 3 + random.nextInt(4)
 
-        val s1 = 16 + random.nextInt(24)
-        val s2 = 24 + random.nextInt(24)
-        val s3 = 12 + random.nextInt(16)
-        val s4 = 8 + random.nextInt(12)
+            val s1 = 16 + random.nextInt(24)
+            val s2 = 24 + random.nextInt(24)
+            val s3 = 12 + random.nextInt(16)
+            val s4 = 8 + random.nextInt(12)
 
-        val h1 = (random.nextLong() and 0x7FFFFFFF) + 1200000L
-        val h2 = (random.nextLong() and 0x7FFFFFFF) + 2400000L
-        val h3 = (random.nextLong() and 0x7FFFFFFF) + 3600000L
-        val h4 = (random.nextLong() and 0x7FFFFFFF) + 4800000L
+            val h1 = (random.nextLong() and 0x7FFFFFFF) + 1200000L
+            val h2 = (random.nextLong() and 0x7FFFFFFF) + 2400000L
+            val h3 = (random.nextLong() and 0x7FFFFFFF) + 3600000L
+            val h4 = (random.nextLong() and 0x7FFFFFFF) + 4800000L
 
-        val patched = current.copy(
-            name = if (current.name.contains("Anti-DPI")) current.name else "${current.name} (Stealth DPI)",
-            jc = jc,
-            jmin = jmin,
-            jmax = jmax,
-            s1 = s1,
-            s2 = s2,
-            s3 = s3,
-            s4 = s4,
-            h1 = h1,
-            h2 = h2,
-            h3 = h3,
-            h4 = h4,
-            mtu = 1360
-        )
+            current.copy(
+                name = if (current.name.contains("Anti-DPI")) current.name else "${current.name} (Stealth DPI)",
+                jc = jc,
+                jmin = jmin,
+                jmax = jmax,
+                s1 = s1,
+                s2 = s2,
+                s3 = s3,
+                s4 = s4,
+                h1 = h1,
+                h2 = h2,
+                h3 = h3,
+                h4 = h4,
+                mtu = 1360
+            )
+        }
 
         viewModelScope.launch(Dispatchers.IO) {
             configRepository.saveConfig(patched)
             withContext(Dispatchers.Main) {
                 _uiState.value = _uiState.value.copy(
                     selectedConfig = patched,
-                    userMessage = "DPI vulnerabilities patched! Profile upgraded to Ultra Stealth."
+                    userMessage = if (isWarp) "WARP профиль оптимизирован: порт 1074/500, MTU=1280 и IPv4-Only!" else "DPI vulnerabilities patched! Profile upgraded to Ultra Stealth."
                 )
                 analyzeConfig(patched)
             }
@@ -258,57 +289,86 @@ class AntiDpiViewModel(
 
     fun applyAntiDpiPreset(presetName: String) {
         val current = _uiState.value.selectedConfig ?: configs.value.firstOrNull() ?: return
+        val isWarp = current.isWarp || !current.reserved.isNullOrBlank() || current.peerPublicKey.trim() == "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo="
 
-        val patched = when (presetName) {
-            "TSPU_RKN" -> {
-                current.copy(
-                    jc = 5,
-                    jmin = 128,
-                    jmax = 512,
-                    s1 = 28,
-                    s2 = 36,
-                    s3 = 24,
-                    s4 = 16,
-                    h1 = 1782940214L,
-                    h2 = 2948192041L,
-                    h3 = 3847192031L,
-                    h4 = 4192847192L,
-                    mtu = 1360
+        val patched = if (isWarp) {
+            val warpH1 = AwgConfig.calculateWarpH1(current.reserved)
+            when (presetName) {
+                "TSPU_RKN" -> current.copy(
+                    endpoint = "188.114.97.1:1074",
+                    allowedIps = "0.0.0.0/0",
+                    mtu = 1280,
+                    jc = 0, s1 = 0, s2 = 0,
+                    h1 = warpH1, h2 = 2L, h3 = 3L, h4 = 4L
                 )
-            }
-            "GFW_DEEP" -> {
-                current.copy(
-                    jc = 7,
-                    jmin = 256,
-                    jmax = 896,
-                    s1 = 36,
-                    s2 = 48,
-                    s3 = 30,
-                    s4 = 20,
-                    h1 = 2049182941L,
-                    h2 = 3194819204L,
-                    h3 = 4019283719L,
-                    h4 = 1849201948L,
-                    mtu = 1280
+                "GFW_DEEP" -> current.copy(
+                    endpoint = "172.64.100.1:4500",
+                    allowedIps = "0.0.0.0/0",
+                    mtu = 1280,
+                    jc = 0, s1 = 0, s2 = 0,
+                    h1 = warpH1, h2 = 2L, h3 = 3L, h4 = 4L
                 )
-            }
-            "GAMING_FAST" -> {
-                current.copy(
-                    jc = 2,
-                    jmin = 40,
-                    jmax = 120,
-                    s1 = 12,
-                    s2 = 16,
-                    s3 = 8,
-                    s4 = 4,
-                    h1 = 1192847192L,
-                    h2 = 2294819204L,
-                    h3 = 3384719203L,
-                    h4 = 4492847192L,
-                    mtu = 1380
+                "GAMING_FAST" -> current.copy(
+                    endpoint = "162.159.193.1:500",
+                    allowedIps = "0.0.0.0/0",
+                    mtu = 1280,
+                    jc = 0, s1 = 0, s2 = 0,
+                    h1 = warpH1, h2 = 2L, h3 = 3L, h4 = 4L
                 )
+                else -> current
             }
-            else -> current
+        } else {
+            when (presetName) {
+                "TSPU_RKN" -> {
+                    current.copy(
+                        jc = 5,
+                        jmin = 128,
+                        jmax = 512,
+                        s1 = 28,
+                        s2 = 36,
+                        s3 = 24,
+                        s4 = 16,
+                        h1 = 1782940214L,
+                        h2 = 2948192041L,
+                        h3 = 3847192031L,
+                        h4 = 4192847192L,
+                        mtu = 1360
+                    )
+                }
+                "GFW_DEEP" -> {
+                    current.copy(
+                        jc = 7,
+                        jmin = 256,
+                        jmax = 896,
+                        s1 = 36,
+                        s2 = 48,
+                        s3 = 30,
+                        s4 = 20,
+                        h1 = 2049182941L,
+                        h2 = 3194819204L,
+                        h3 = 4019283719L,
+                        h4 = 1849201948L,
+                        mtu = 1280
+                    )
+                }
+                "GAMING_FAST" -> {
+                    current.copy(
+                        jc = 2,
+                        jmin = 40,
+                        jmax = 120,
+                        s1 = 12,
+                        s2 = 16,
+                        s3 = 8,
+                        s4 = 4,
+                        h1 = 1192847192L,
+                        h2 = 2294819204L,
+                        h3 = 3384719203L,
+                        h4 = 4492847192L,
+                        mtu = 1380
+                    )
+                }
+                else -> current
+            }
         }
 
         viewModelScope.launch(Dispatchers.IO) {
