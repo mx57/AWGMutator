@@ -6,6 +6,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.example.App
 import com.example.domain.model.DiagnosticActionType
+import com.example.domain.model.EndpointProbeDetail
 import com.example.domain.model.LogDiagnosticReport
 import com.example.domain.model.LogSeverity
 import com.example.domain.model.TunnelLogItem
@@ -13,7 +14,10 @@ import com.example.domain.model.VpnState
 import com.example.domain.model.VpnStatus
 import com.example.domain.usecase.GenerateHybridWarpAwgUseCase
 import com.example.domain.usecase.ParseDiagnosticLogsUseCase
+import com.example.util.WireGuardProbe
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
@@ -33,7 +37,11 @@ data class LogViewerUiState(
     val userFeedbackMessage: String? = null,
     val activeTab: Int = 0, // 0 = Diagnostic Console, 1 = Raw Logs
     val isPastedLogDialogOpen: Boolean = false,
-    val customLogAnalysisReport: LogDiagnosticReport? = null
+    val customLogAnalysisReport: LogDiagnosticReport? = null,
+    val isProbingEndpoints: Boolean = false,
+    val endpointProbeResults: Map<String, EndpointProbeDetail> = emptyMap(),
+    val bestWorkingEndpoint: String? = null,
+    val endpointPortFilter: String? = null
 )
 
 data class LogStatistics(
@@ -262,6 +270,111 @@ class LogViewerViewModel : ViewModel() {
                     }
                 }
                 DiagnosticActionType.NONE -> {}
+            }
+        }
+    }
+
+    fun setEndpointPortFilter(portFilter: String?) {
+        _uiState.value = _uiState.value.copy(endpointPortFilter = portFilter)
+    }
+
+    fun scanAndProbeCandidateEndpoints(onComplete: ((String?) -> Unit)? = null) {
+        viewModelScope.launch(Dispatchers.IO) {
+            _uiState.value = _uiState.value.copy(isProbingEndpoints = true)
+
+            val repository = App.instance.configRepository
+            val allConfigs = repository.getAllConfigs().firstOrNull() ?: emptyList()
+            val activeConfig = allConfigs.firstOrNull { it.id == vpnStatus.value.activeConfigId }
+                ?: allConfigs.firstOrNull()
+
+            val peerPubKey = activeConfig?.peerPublicKey ?: WireGuardProbe.DEFAULT_CLOUDFLARE_WARP_PUBKEY
+            val clientPrivKey = activeConfig?.privateKey
+            val h1 = activeConfig?.h1 ?: 1L
+            val s1 = activeConfig?.s1 ?: 0
+
+            val endpoints = parseDiagnosticLogsUseCase.cleanAnycastEndpoints
+
+            val resultMap = mutableMapOf<String, EndpointProbeDetail>()
+
+            // Probe in parallel with timeout 900ms
+            val deferreds = endpoints.map { epStr ->
+                async(Dispatchers.IO) {
+                    val parts = epStr.split(":")
+                    val host = parts[0]
+                    val port = parts.getOrNull(1)?.toIntOrNull() ?: 500
+
+                    // First probe with active config h1/s1
+                    var probeRes = WireGuardProbe.probeEndpoint(
+                        host = host,
+                        port = port,
+                        peerPublicKeyBase64 = peerPubKey,
+                        clientPrivateKeyBase64 = clientPrivKey,
+                        h1 = h1,
+                        s1 = s1,
+                        timeoutMs = 900,
+                        attempts = 1
+                    )
+
+                    // If not reachable and h1 was custom, try standard WireGuard (h1 = 1)
+                    if (!probeRes.isReachable && h1 != 1L) {
+                        val fallbackProbe = WireGuardProbe.probeEndpoint(
+                            host = host,
+                            port = port,
+                            peerPublicKeyBase64 = peerPubKey,
+                            clientPrivateKeyBase64 = clientPrivKey,
+                            h1 = 1L,
+                            s1 = 0,
+                            timeoutMs = 900,
+                            attempts = 1
+                        )
+                        if (fallbackProbe.isReachable) {
+                            probeRes = fallbackProbe
+                        }
+                    }
+
+                    EndpointProbeDetail(
+                        endpoint = epStr,
+                        port = port,
+                        isWorking = probeRes.isReachable,
+                        latencyMs = probeRes.latencyMs,
+                        error = probeRes.error
+                    )
+                }
+            }
+
+            val probeList = deferreds.awaitAll()
+            probeList.forEach { detail ->
+                resultMap[detail.endpoint] = detail
+            }
+
+            val workingSorted = probeList.filter { it.isWorking }.sortedBy { it.latencyMs ?: Long.MAX_VALUE }
+            val best = workingSorted.firstOrNull()?.endpoint
+
+            _uiState.value = _uiState.value.copy(
+                isProbingEndpoints = false,
+                endpointProbeResults = resultMap,
+                bestWorkingEndpoint = best,
+                userFeedbackMessage = if (best != null) {
+                    "Найдено рабочих узлов: ${workingSorted.size}. Лучший: $best (${workingSorted.first().latencyMs} мс)"
+                } else {
+                    "Все протестированные узлы недоступны (UDP сброшен провайдером)"
+                }
+            )
+
+            onComplete?.invoke(best)
+        }
+    }
+
+    fun autoApplyBestEndpoint() {
+        val currentBest = _uiState.value.bestWorkingEndpoint
+        if (currentBest != null) {
+            applyAction(DiagnosticActionType.APPLY_ENDPOINT, currentBest)
+        } else {
+            _uiState.value = _uiState.value.copy(userFeedbackMessage = "Сканирование Anycast-узлов на обход ТСПУ...")
+            scanAndProbeCandidateEndpoints { bestFound ->
+                if (bestFound != null) {
+                    applyAction(DiagnosticActionType.APPLY_ENDPOINT, bestFound)
+                }
             }
         }
     }

@@ -10,15 +10,27 @@ import com.example.domain.model.TunnelLogItem
 
 class ParseDiagnosticLogsUseCase {
 
-    private val cleanAnycastEndpoints = listOf(
-        "162.159.130.1:1074",
+    val cleanAnycastEndpoints = listOf(
+        "162.159.193.1:500",
+        "162.159.193.1:4500",
+        "172.64.100.1:500",
         "172.64.100.1:4500",
         "104.16.132.229:500",
-        "141.101.65.1:1074",
+        "104.16.132.229:4500",
+        "162.159.192.1:2408",
+        "162.159.195.1:500",
+        "162.159.195.1:4500",
+        "141.101.65.1:500",
+        "141.101.65.1:4500",
+        "198.41.130.1:500",
         "198.41.130.1:4500",
-        "162.159.135.1:500",
-        "172.64.104.1:1074",
-        "104.19.18.1:4500"
+        "162.159.135.1:854",
+        "162.159.130.1:894",
+        "172.64.104.1:903",
+        "188.114.98.1:4500",
+        "188.114.99.1:500",
+        "188.114.96.1:854",
+        "162.159.130.1:1074"
     )
 
     operator fun invoke(
@@ -110,7 +122,7 @@ class ParseDiagnosticLogsUseCase {
                     summary = "Пакеты отправляются, но ответ не доходит. Провайдер блокирует подсеть/порт.",
                     technicalDetails = "ТСПУ/РКН отбрасывает пакеты к узлу ${endpoint?.substringBefore(":") ?: "188.114.x.x"}. Требуется чистый Anycast узел.",
                     detectedInLog = "Tx=$txBytes B, Rx=0 B (Повторов без ответа: $maxZeroRxCycles)",
-                    recommendedFix = "Переключиться на чистый узел 162.159.130.1:1074 / 172.64.100.1:4500",
+                    recommendedFix = "Переключиться на устойчивый Anycast узел (порт 500 / 4500)",
                     actionType = DiagnosticActionType.APPLY_ENDPOINT,
                     actionPayload = cleanAnycastEndpoints.first()
                 )

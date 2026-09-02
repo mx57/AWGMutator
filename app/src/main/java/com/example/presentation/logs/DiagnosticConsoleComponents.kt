@@ -5,9 +5,11 @@ import androidx.compose.animation.animateContentSize
 import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -26,6 +28,7 @@ import androidx.compose.ui.unit.sp
 import com.example.domain.model.BottleneckSeverity
 import com.example.domain.model.ConnectionBottleneck
 import com.example.domain.model.DiagnosticActionType
+import com.example.domain.model.EndpointProbeDetail
 import com.example.domain.model.HandshakeStageStatus
 import com.example.domain.model.LogDiagnosticReport
 import com.example.ui.theme.CyberCyan
@@ -37,6 +40,12 @@ import com.example.ui.theme.WarningAmber
 @Composable
 fun DiagnosticConsoleView(
     report: LogDiagnosticReport,
+    isProbingEndpoints: Boolean = false,
+    endpointProbeResults: Map<String, EndpointProbeDetail> = emptyMap(),
+    endpointPortFilter: String? = null,
+    onSetPortFilter: (String?) -> Unit = {},
+    onScanEndpoints: () -> Unit = {},
+    onAutoApplyBest: () -> Unit = {},
     onApplyAction: (DiagnosticActionType, String?) -> Unit,
     onOpenPasteDialog: () -> Unit,
     onClearCustomReport: () -> Unit,
@@ -172,11 +181,17 @@ fun DiagnosticConsoleView(
             }
         }
 
-        // 5. Clean Anycast Endpoints Matrix
+        // 5. Clean Anycast Endpoints Matrix with Live Scanner
         item {
             CleanEndpointsMatrixCard(
                 currentEndpoint = report.targetEndpoint,
                 recommendedEndpoints = report.recommendedEndpoints,
+                isProbing = isProbingEndpoints,
+                probeResults = endpointProbeResults,
+                portFilter = endpointPortFilter,
+                onSetPortFilter = onSetPortFilter,
+                onScanEndpoints = onScanEndpoints,
+                onAutoApplyBest = onAutoApplyBest,
                 onSelectEndpoint = { ep ->
                     onApplyAction(DiagnosticActionType.APPLY_ENDPOINT, ep)
                 }
@@ -541,6 +556,12 @@ private fun BottleneckCard(
 private fun CleanEndpointsMatrixCard(
     currentEndpoint: String?,
     recommendedEndpoints: List<String>,
+    isProbing: Boolean = false,
+    probeResults: Map<String, EndpointProbeDetail> = emptyMap(),
+    portFilter: String? = null,
+    onSetPortFilter: (String?) -> Unit = {},
+    onScanEndpoints: () -> Unit = {},
+    onAutoApplyBest: () -> Unit = {},
     onSelectEndpoint: (String) -> Unit,
     modifier: Modifier = Modifier
 ) {
@@ -557,7 +578,7 @@ private fun CleanEndpointsMatrixCard(
                 horizontalArrangement = Arrangement.SpaceBetween
             ) {
                 Text(
-                    text = "Чистые Anycast-узлы без блокировок",
+                    text = "Anycast-узлы и обход блокировок ТСПУ",
                     style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.Bold),
                     color = MaterialTheme.colorScheme.onSurface
                 )
@@ -574,22 +595,116 @@ private fun CleanEndpointsMatrixCard(
                 }
             }
 
-            Spacer(modifier = Modifier.height(6.dp))
+            Spacer(modifier = Modifier.height(4.dp))
             Text(
-                text = "Нажмите на узел для мгновенной ротации в активном профиле:",
+                text = "Порты UDP 500 и 4500 (IPsec/NAT-T) не блокируются ТСПУ, в отличие от стандартных портов WireGuard.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant
             )
 
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Action Buttons: Scan All and Apply Best
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                Button(
+                    onClick = onScanEndpoints,
+                    enabled = !isProbing,
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(8.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = CyberCyan,
+                        contentColor = Color.Black
+                    )
+                ) {
+                    if (isProbing) {
+                        CircularProgressIndicator(
+                            modifier = Modifier.size(16.dp),
+                            color = Color.Black,
+                            strokeWidth = 2.dp
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text("Сканирование...", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
+                    } else {
+                        Icon(Icons.Default.Bolt, contentDescription = null, modifier = Modifier.size(16.dp))
+                        Spacer(modifier = Modifier.width(4.dp))
+                        Text("Сканировать узлы", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
+                    }
+                }
+
+                Button(
+                    onClick = onAutoApplyBest,
+                    modifier = Modifier.weight(1f),
+                    shape = RoundedCornerShape(8.dp),
+                    colors = ButtonDefaults.buttonColors(
+                        containerColor = NeonGreen,
+                        contentColor = Color.Black
+                    )
+                ) {
+                    Icon(Icons.Default.AutoFixHigh, contentDescription = null, modifier = Modifier.size(16.dp))
+                    Spacer(modifier = Modifier.width(4.dp))
+                    Text("Применить лучший", style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold))
+                }
+            }
+
+            Spacer(modifier = Modifier.height(10.dp))
+
+            // Port Filter Chips
+            val portOptions = listOf(
+                null to "Все",
+                "500" to "UDP:500 (IPSec)",
+                "4500" to "UDP:4500 (NAT-T)",
+                "2408" to "UDP:2408",
+                "854" to "UDP:854/894",
+                "1074" to "UDP:1074"
+            )
+
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .horizontalScroll(rememberScrollState()),
+                horizontalArrangement = Arrangement.spacedBy(6.dp)
+            ) {
+                portOptions.forEach { (portKey, label) ->
+                    FilterChip(
+                        selected = portFilter == portKey,
+                        onClick = { onSetPortFilter(portKey) },
+                        label = { Text(label, fontSize = 11.sp) },
+                        colors = FilterChipDefaults.filterChipColors(
+                            selectedContainerColor = CyberCyan.copy(alpha = 0.2f),
+                            selectedLabelColor = CyberCyan
+                        )
+                    )
+                }
+            }
+
             Spacer(modifier = Modifier.height(8.dp))
 
+            val filteredEndpoints = recommendedEndpoints.filter { ep ->
+                if (portFilter == null) true
+                else if (portFilter == "854") ep.endsWith(":854") || ep.endsWith(":894") || ep.endsWith(":903")
+                else ep.endsWith(":$portFilter")
+            }
+
             Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                recommendedEndpoints.forEach { ep ->
+                filteredEndpoints.forEach { ep ->
                     val isCurrent = ep.equals(currentEndpoint, ignoreCase = true)
+                    val probeInfo = probeResults[ep]
+
                     Surface(
                         shape = RoundedCornerShape(8.dp),
                         color = if (isCurrent) CyberCyan.copy(alpha = 0.15f) else MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f),
-                        border = BorderStroke(1.dp, if (isCurrent) CyberCyan else MaterialTheme.colorScheme.outlineVariant),
+                        border = BorderStroke(
+                            1.dp,
+                            when {
+                                isCurrent -> CyberCyan
+                                probeInfo?.isWorking == true -> NeonGreen.copy(alpha = 0.6f)
+                                probeInfo?.isWorking == false -> DangerRed.copy(alpha = 0.4f)
+                                else -> MaterialTheme.colorScheme.outlineVariant
+                            }
+                        ),
                         modifier = Modifier
                             .fillMaxWidth()
                             .clickable { onSelectEndpoint(ep) }
@@ -599,29 +714,57 @@ private fun CleanEndpointsMatrixCard(
                             verticalAlignment = Alignment.CenterVertically,
                             horizontalArrangement = Arrangement.SpaceBetween
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
+                            Row(
+                                modifier = Modifier.weight(1f),
+                                verticalAlignment = Alignment.CenterVertically
+                            ) {
                                 Icon(
-                                    imageVector = if (isCurrent) Icons.Default.CheckCircle else Icons.Default.Dns,
+                                    imageVector = when {
+                                        isCurrent -> Icons.Default.CheckCircle
+                                        probeInfo?.isWorking == true -> Icons.Default.CheckCircleOutline
+                                        probeInfo?.isWorking == false -> Icons.Default.HighlightOff
+                                        else -> Icons.Default.Dns
+                                    },
                                     contentDescription = null,
-                                    tint = if (isCurrent) CyberCyan else MaterialTheme.colorScheme.primary,
+                                    tint = when {
+                                        isCurrent -> CyberCyan
+                                        probeInfo?.isWorking == true -> NeonGreen
+                                        probeInfo?.isWorking == false -> DangerRed
+                                        else -> MaterialTheme.colorScheme.primary
+                                    },
                                     modifier = Modifier.size(16.dp)
                                 )
                                 Spacer(modifier = Modifier.width(8.dp))
-                                Text(
-                                    text = ep,
-                                    style = MaterialTheme.typography.bodySmall.copy(
-                                        fontFamily = FontFamily.Monospace,
-                                        fontWeight = FontWeight.Bold
-                                    ),
-                                    color = MaterialTheme.colorScheme.onSurface
-                                )
+                                Column {
+                                    Text(
+                                        text = ep,
+                                        style = MaterialTheme.typography.bodySmall.copy(
+                                            fontFamily = FontFamily.Monospace,
+                                            fontWeight = FontWeight.Bold
+                                        ),
+                                        color = MaterialTheme.colorScheme.onSurface
+                                    )
+                                    if (probeInfo != null) {
+                                        Text(
+                                            text = if (probeInfo.isWorking) "✓ Доступен (${probeInfo.latencyMs} мс)" else "✗ Сброс ТСПУ / Таймаут",
+                                            style = MaterialTheme.typography.labelSmall.copy(fontSize = 10.sp),
+                                            color = if (probeInfo.isWorking) NeonGreen else DangerRed
+                                        )
+                                    }
+                                }
                             }
 
-                            Text(
-                                text = if (isCurrent) "Активен" else "Применить",
-                                style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                color = if (isCurrent) CyberCyan else MaterialTheme.colorScheme.primary
-                            )
+                            Surface(
+                                shape = RoundedCornerShape(6.dp),
+                                color = if (isCurrent) CyberCyan else MaterialTheme.colorScheme.primary.copy(alpha = 0.15f)
+                            ) {
+                                Text(
+                                    text = if (isCurrent) "Активен" else "Выбрать",
+                                    style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
+                                    color = if (isCurrent) Color.Black else MaterialTheme.colorScheme.primary,
+                                    modifier = Modifier.padding(horizontal = 8.dp, vertical = 4.dp)
+                                )
+                            }
                         }
                     }
                 }

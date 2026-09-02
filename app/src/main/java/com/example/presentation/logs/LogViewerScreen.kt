@@ -240,6 +240,12 @@ fun LogViewerScreen(
                 // Tab 0: Diagnostic Console View
                 DiagnosticConsoleView(
                     report = activeReport,
+                    isProbingEndpoints = uiState.isProbingEndpoints,
+                    endpointProbeResults = uiState.endpointProbeResults,
+                    endpointPortFilter = uiState.endpointPortFilter,
+                    onSetPortFilter = { viewModel.setEndpointPortFilter(it) },
+                    onScanEndpoints = { viewModel.scanAndProbeCandidateEndpoints() },
+                    onAutoApplyBest = { viewModel.autoApplyBestEndpoint() },
                     onApplyAction = { action, payload ->
                         viewModel.applyAction(action, payload)
                     },
