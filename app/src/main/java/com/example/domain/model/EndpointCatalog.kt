@@ -37,19 +37,19 @@ object EndpointCatalog {
     )
 
     val preconfiguredEndpoints: List<EndpointItem> = listOf(
-        // High-priority tested & working clean Anycast bypass endpoints (EU-Anycast & Alternate Ports)
-        EndpointItem("ep_ru_bypass_1", "188.114.96.1", 1074, "ALL", "Global Anycast", "🌍", "CF Anycast Port 1074 (Clean High-Speed)"),
-        EndpointItem("ep_ru_bypass_2", "188.114.96.60", 894, "ALL", "Global Anycast", "🌍", "CF Edge Port 894 (Clean)"),
-        EndpointItem("ep_ru_bypass_3", "188.114.98.1", 4500, "ALL", "Global Anycast", "🌍", "CF NAT-T Port 4500 (Clean)"),
-        EndpointItem("ep_ru_bypass_4", "188.114.97.35", 859, "ALL", "Global Anycast", "🌍", "CF Edge Port 859 (Clean)"),
-        EndpointItem("ep_ru_bypass_5", "188.114.98.45", 878, "ALL", "Global Anycast", "🌍", "CF Edge Port 878 (Clean)"),
-        EndpointItem("ep_ru_bypass_6", "188.114.99.100", 903, "ALL", "Global Anycast", "🌍", "CF Edge Port 903 (Clean)"),
-        EndpointItem("ep_ru_bypass_7", "188.114.99.1", 500, "ALL", "Global Anycast", "🌍", "CF IPsec Port 500 (Clean)"),
-        EndpointItem("ep_ru_bypass_8", "188.114.97.1", 854, "ALL", "Global Anycast", "🌍", "CF Anycast Port 854 (Clean)"),
-        EndpointItem("ep_ru_bypass_9", "188.114.97.150", 908, "ALL", "Global Anycast", "🌍", "CF Edge Port 908 (Clean)"),
-        EndpointItem("ep_ru_bypass_10", "162.159.195.1", 1074, "ALL", "Global Anycast", "🌍", "CF Bypass Port 1074"),
-        EndpointItem("ep_ru_bypass_11", "162.159.193.1", 2408, "ALL", "Global Anycast", "🌍", "CF Standard Port 2408"),
-        EndpointItem("ep_ru_bypass_12", "162.159.192.1", 2408, "ALL", "Global Anycast", "🌍", "CF Standard Port 2408"),
+        // High-priority clean Anycast subnets (Unblocked across Russian ISP/TSPU)
+        EndpointItem("ep_clean_1", "162.159.130.1", 1074, "ALL", "Global Anycast", "🌍", "CF Clean Subnet Port 1074 (High-Speed)"),
+        EndpointItem("ep_clean_2", "172.64.100.1", 4500, "ALL", "Global Anycast", "🌍", "CF CDN Anycast Port 4500 (NAT-T Bypass)"),
+        EndpointItem("ep_clean_3", "104.16.132.229", 500, "ALL", "Global Anycast", "🌍", "CF Edge Port 500 (IPsec Bypass)"),
+        EndpointItem("ep_clean_4", "141.101.65.1", 1074, "ALL", "Global Anycast", "🌍", "CF Edge Port 1074 (Clean Anycast)"),
+        EndpointItem("ep_clean_5", "198.41.130.1", 4500, "ALL", "Global Anycast", "🌍", "CF Anycast Port 4500 (Clean)"),
+        EndpointItem("ep_clean_6", "162.159.135.1", 500, "ALL", "Global Anycast", "🌍", "CF Anycast Port 500 (Clean)"),
+        EndpointItem("ep_clean_7", "172.64.104.1", 1074, "ALL", "Global Anycast", "🌍", "CF Edge Port 1074 (Clean)"),
+        EndpointItem("ep_clean_8", "104.19.18.1", 4500, "ALL", "Global Anycast", "🌍", "CF Edge Port 4500 (Clean)"),
+        EndpointItem("ep_clean_9", "162.159.138.1", 894, "ALL", "Global Anycast", "🌍", "CF Edge Port 894 (Clean)"),
+        EndpointItem("ep_clean_10", "162.159.195.1", 1074, "ALL", "Global Anycast", "🌍", "CF Bypass Port 1074"),
+        EndpointItem("ep_clean_11", "188.114.98.1", 4500, "ALL", "Global Anycast", "🌍", "CF NAT-T Port 4500"),
+        EndpointItem("ep_clean_12", "188.114.99.1", 500, "ALL", "Global Anycast", "🌍", "CF IPsec Port 500"),
 
         // Germany 🇩🇪
         EndpointItem("ep_de_1", "188.114.97.10", 1074, "DE", "Germany", "🇩🇪", "Frankfurt Edge (188.114.97.10)"),
@@ -109,11 +109,18 @@ object EndpointCatalog {
     fun generateCandidateEndpoints(count: Int = 20, countryCode: String = "ALL"): List<EndpointItem> {
         val random = Random()
         val baseSubnets = listOf(
-            "188.114.96",
-            "188.114.97",
+            "162.159.130",
+            "162.159.133",
+            "162.159.135",
+            "172.64.100",
+            "172.64.104",
+            "104.16.132",
+            "104.19.18",
+            "141.101.65",
+            "198.41.130",
+            "162.159.195",
             "188.114.98",
-            "188.114.99",
-            "162.159.195"
+            "188.114.99"
         )
 
         val matchingCountry = countries.firstOrNull { it.first == countryCode } ?: countries.first()
