@@ -57,7 +57,6 @@ import com.example.domain.model.VpnState
 import com.example.domain.model.VpnStatus
 import com.example.vpn.AppTrafficTracker
 import com.example.ui.theme.CyberCyan
-import com.example.ui.theme.DangerRed
 import com.example.ui.theme.NeonGreen
 import com.example.ui.theme.WarningAmber
 
