@@ -1040,7 +1040,7 @@ fun AddAwgConfigDialog(
     ) -> Unit
 ) {
     var name by remember { mutableStateOf("AmneziaWG Russian Bypass") }
-    var endpoint by remember { mutableStateOf("188.114.97.1:854") }
+    var endpoint by remember { mutableStateOf("188.114.97.1:1074") }
     var peerKey by remember { mutableStateOf("bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=") }
     var dns by remember { mutableStateOf(defaultDns.ifBlank { "1.1.1.1, 8.8.8.8, 1.0.0.1" }) }
     var selectedPreset by remember { mutableStateOf(ObfuscationPreset.VERIFIED_AWG_RUSSIAN_BYPASS) }
@@ -1267,7 +1267,7 @@ fun GenerateWarpDialog(
     var name by remember { mutableStateOf("WARP Russian Bypass Profile") }
     var license by remember { mutableStateOf("") }
     var dns by remember { mutableStateOf(defaultDns.ifBlank { "1.1.1.1, 8.8.8.8, 1.0.0.1" }) }
-    var endpoint by remember { mutableStateOf("188.114.97.1:854") }
+    var endpoint by remember { mutableStateOf("188.114.97.1:1074") }
     var injectAntiDpi by remember { mutableStateOf(true) }
 
     Dialog(onDismissRequest = onDismiss) {

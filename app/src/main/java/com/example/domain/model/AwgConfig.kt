@@ -34,7 +34,7 @@ data class AwgConfig(
     val peerPublicKey: String = "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=",
     val presharedKey: String? = null,
     val allowedIps: String = "0.0.0.0/0, ::/0",
-    val endpoint: String = "188.114.97.1:854",
+    val endpoint: String = "188.114.97.1:1074",
     val persistentKeepalive: Int = 25,
     val isWarp: Boolean = false,
     val reserved: String? = null,

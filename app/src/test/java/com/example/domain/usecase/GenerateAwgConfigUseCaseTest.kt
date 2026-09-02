@@ -30,7 +30,7 @@ class GenerateAwgConfigUseCaseTest {
 
         val config = result.getOrThrow()
         assertEquals("AmneziaWG Custom", config.name)
-        assertEquals("188.114.97.1:854", config.endpoint)
+        assertEquals("188.114.97.1:1074", config.endpoint)
         assertEquals("bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=", config.peerPublicKey)
         assertNotNull(config.privateKey)
         assertTrue(config.privateKey.isNotBlank())
