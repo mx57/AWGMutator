@@ -18,6 +18,9 @@ import com.example.util.ConfigParser
 import com.example.util.MagiskModuleGenerator
 import com.example.util.RootRunner
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -455,33 +458,52 @@ class ConfigsViewModel(
 
     fun fixConfigEndpoint(config: AwgConfig) {
         viewModelScope.launch(Dispatchers.IO) {
+            withContext(Dispatchers.Main) {
+                _uiState.value = _uiState.value.copy(userMessage = "🔍 Сканирование чистых эндпоинтов для '${config.name}'...")
+            }
             val candidateEndpoints = listOf(
-                "188.114.96.1:1074",
-                "188.114.98.1:4500",
-                "188.114.99.1:500",
+                "188.114.97.1:854",
                 "188.114.97.35:859",
-                "188.114.96.60:894",
                 "188.114.98.45:878",
                 "188.114.99.100:903",
+                "188.114.98.1:4500",
                 "188.114.97.150:908",
-                "188.114.96.200:2408",
+                "188.114.96.60:894",
                 "188.114.97.10:1074",
-                "188.114.98.15:854",
-                "188.114.97.1:854"
+                "188.114.97.25:1074",
+                "188.114.98.30:1074",
+                "188.114.98.15:854"
             )
-            val currentEp = config.endpoint.trim()
-            val currentIndex = candidateEndpoints.indexOf(currentEp)
-            val cleanEndpoint = if (currentIndex >= 0 && currentIndex < candidateEndpoints.size - 1) {
-                candidateEndpoints[currentIndex + 1]
-            } else {
-                candidateEndpoints.firstOrNull { it != currentEp } ?: "188.114.96.1:1074"
+
+            val probeResults: List<Triple<String, Boolean, Long>> = coroutineScope {
+                candidateEndpoints.map { ep ->
+                    async {
+                        val res = App.instance.pingTester.testEndpoint(
+                            endpoint = ep,
+                            peerPublicKey = config.peerPublicKey.ifBlank { com.example.util.WireGuardProbe.DEFAULT_CLOUDFLARE_WARP_PUBKEY },
+                            clientPrivateKey = config.privateKey.ifBlank { null },
+                            h1 = config.h1,
+                            s1 = config.s1
+                        )
+                        Triple(ep, res.isReachable, res.latencyMs ?: 9999L)
+                    }
+                }.awaitAll()
             }
 
-            val updated = config.copy(endpoint = cleanEndpoint)
+            val bestEndpoint = probeResults.filter { it.second }
+                .minByOrNull { it.third }?.first
+                ?: candidateEndpoints.firstOrNull { it != config.endpoint.trim() }
+                ?: "188.114.97.1:854"
+
+            val latency = probeResults.firstOrNull { it.first == bestEndpoint }?.third
+            val updated = config.copy(
+                endpoint = bestEndpoint,
+                lastPingMs = if (latency != null && latency < 9999L) latency else null
+            )
             configRepository.updateConfig(updated)
             withContext(Dispatchers.Main) {
                 _uiState.value = _uiState.value.copy(
-                    userMessage = "Эндпоинт '${config.name}' обновлен на $cleanEndpoint!"
+                    userMessage = "✓ Эндпоинт '${config.name}' обновлен: $bestEndpoint (${if (latency != null && latency < 9999L) "${latency}ms" else "OK"})"
                 )
             }
         }

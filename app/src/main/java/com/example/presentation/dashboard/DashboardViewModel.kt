@@ -18,6 +18,9 @@ import com.example.domain.usecase.GenerateHybridWarpAwgUseCase
 import com.example.domain.usecase.GenerateWarpConfigUseCase
 import com.example.util.RootRunner
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
@@ -253,39 +256,59 @@ class DashboardViewModel(
 
     fun fixBlockedEndpointAndReconnect(context: Context) {
         val currentConfig = _uiState.value.selectedConfig ?: configs.value.firstOrNull() ?: return
-        viewModelScope.launch {
+        viewModelScope.launch(Dispatchers.IO) {
+            withContext(Dispatchers.Main) {
+                _uiState.value = _uiState.value.copy(userMessage = "🔍 Поиск рабочего эндпоинта без блокировок ТСПУ...")
+            }
             val candidateEndpoints = listOf(
-                "188.114.96.1:1074",
-                "188.114.98.1:4500",
-                "188.114.99.1:500",
+                "188.114.97.1:854",
                 "188.114.97.35:859",
-                "188.114.96.60:894",
                 "188.114.98.45:878",
                 "188.114.99.100:903",
+                "188.114.98.1:4500",
                 "188.114.97.150:908",
-                "188.114.96.200:2408",
+                "188.114.96.60:894",
                 "188.114.97.10:1074",
-                "188.114.98.15:854",
-                "188.114.97.1:854"
+                "188.114.97.25:1074",
+                "188.114.98.30:1074",
+                "188.114.98.15:854"
             )
 
-            // Pick next endpoint different from current
-            val currentEp = currentConfig.endpoint.trim()
-            val currentIndex = candidateEndpoints.indexOf(currentEp)
-            val nextEndpoint = if (currentIndex >= 0 && currentIndex < candidateEndpoints.size - 1) {
-                candidateEndpoints[currentIndex + 1]
-            } else {
-                candidateEndpoints.firstOrNull { it != currentEp } ?: "188.114.96.1:1074"
+            // Probe candidates in parallel
+            val probeResults: List<Triple<String, Boolean, Long>> = coroutineScope {
+                candidateEndpoints.map { ep ->
+                    async {
+                        val res = App.instance.pingTester.testEndpoint(
+                            endpoint = ep,
+                            peerPublicKey = currentConfig.peerPublicKey.ifBlank { com.example.util.WireGuardProbe.DEFAULT_CLOUDFLARE_WARP_PUBKEY },
+                            clientPrivateKey = currentConfig.privateKey.ifBlank { null },
+                            h1 = currentConfig.h1,
+                            s1 = currentConfig.s1
+                        )
+                        Triple(ep, res.isReachable, res.latencyMs ?: 9999L)
+                    }
+                }.awaitAll()
             }
 
-            val updatedConfig = currentConfig.copy(endpoint = nextEndpoint)
-            configRepository.updateConfig(updatedConfig)
-            _uiState.value = _uiState.value.copy(
-                selectedConfig = updatedConfig,
-                userMessage = "Смена эндпоинта на $nextEndpoint. Переподключение..."
+            val bestEndpoint = probeResults.filter { it.second }
+                .minByOrNull { it.third }?.first
+                ?: candidateEndpoints.firstOrNull { it != currentConfig.endpoint.trim() }
+                ?: "188.114.97.1:854"
+
+            val latency = probeResults.firstOrNull { it.first == bestEndpoint }?.third
+            val updatedConfig = currentConfig.copy(
+                endpoint = bestEndpoint,
+                lastPingMs = if (latency != null && latency < 9999L) latency else null
             )
+            configRepository.updateConfig(updatedConfig)
+            withContext(Dispatchers.Main) {
+                _uiState.value = _uiState.value.copy(
+                    selectedConfig = updatedConfig,
+                    userMessage = "✓ Выбран рабочий эндпоинт $bestEndpoint (${if (latency != null && latency < 9999L) "${latency}ms" else "OK"}). Переподключение..."
+                )
+            }
             App.instance.tunnelManager.disconnect()
-            kotlinx.coroutines.delay(800)
+            kotlinx.coroutines.delay(600)
             App.instance.tunnelManager.connect(updatedConfig)
         }
     }

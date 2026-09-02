@@ -25,7 +25,7 @@ class GenerateHybridWarpAwgUseCase(
             val warpH1 = AwgConfig.calculateWarpH1(baseAwg.reserved)
             val hybrid = baseAwg.copy(
                 dns = dns,
-                endpoint = baseAwg.endpoint.ifBlank { "188.114.96.1:1074" },
+                endpoint = baseAwg.endpoint.ifBlank { "188.114.97.1:854" },
                 mtu = 1280,
                 jc = 0,
                 jmin = 0,
