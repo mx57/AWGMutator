@@ -84,7 +84,7 @@ class CloudflareApiTest {
                     put(org.json.JSONObject().apply {
                         put("public_key", "peer_pub_key_123")
                         put("endpoint", org.json.JSONObject().apply {
-                            put("v4", "188.114.97.5:2408")
+                            put("v4", "162.159.130.5:2408")
                             put("v6", "[2606:4700:d0::a29f:c001]:2408")
                         })
                     })
@@ -107,7 +107,7 @@ class CloudflareApiTest {
         assertEquals(dummyKeyPair.publicKey, warpConfig.publicKey)
         assertEquals("172.16.0.2/32", warpConfig.v4Address)
         assertEquals("2606:4700:110:893c::1/128", warpConfig.v6Address)
-        assertEquals("188.114.97.5:2408", warpConfig.endpointV4)
+        assertEquals("162.159.130.5:2408", warpConfig.endpointV4)
         assertEquals("[2606:4700:d0::a29f:c001]:2408", warpConfig.endpointV6)
         assertEquals("peer_pub_key_123", warpConfig.peerPublicKey)
         assertEquals("1, 2, 3", warpConfig.reserved)
@@ -141,7 +141,7 @@ class CloudflareApiTest {
 
         val warpConfig = api.buildWarpConfigFromResponse(regResult, null, licenseKey = null)
 
-        assertEquals("188.114.97.1:1074", warpConfig.endpointV4)
+        assertEquals("162.159.130.1:1074", warpConfig.endpointV4)
         org.junit.Assert.assertFalse(warpConfig.warpPlusEnabled)
     }
 }

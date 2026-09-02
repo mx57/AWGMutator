@@ -302,12 +302,12 @@ open class CloudflareApi(
         val hostEndpoint = endpointObj?.optString("host")
         val rawEndpointV6 = endpointObj?.optString("v6")
 
-        // Prioritize clean, unblocked Cloudflare Anycast IP ranges (188.114.97.x, 188.114.98.x)
-        // over blocked 162.159.192.x / 162.159.193.x
+        // Prioritize clean, unblocked Cloudflare Anycast IP ranges (162.159.130.x, 172.64.100.x)
+        // over blocked 188.114.x.x / 162.159.192.x / 162.159.193.x
         val chosenV4 = when {
-            !rawEndpointV4.isNullOrBlank() && !rawEndpointV4.startsWith("162.159.192") && !rawEndpointV4.startsWith("162.159.193") -> rawEndpointV4
-            !hostEndpoint.isNullOrBlank() && !hostEndpoint.contains("engage.cloudflareclient.com") -> hostEndpoint
-            else -> "188.114.97.1:1074"
+            !rawEndpointV4.isNullOrBlank() && !rawEndpointV4.startsWith("162.159.192") && !rawEndpointV4.startsWith("162.159.193") && !rawEndpointV4.startsWith("188.114") -> rawEndpointV4
+            !hostEndpoint.isNullOrBlank() && !hostEndpoint.contains("engage.cloudflareclient.com") && !hostEndpoint.contains("188.114") -> hostEndpoint
+            else -> "162.159.130.1:1074"
         }
         val endpointV4 = com.example.domain.model.AwgConfig.sanitizeEndpoint(chosenV4, defaultPort = 1074)
         val endpointV6 = com.example.domain.model.AwgConfig.sanitizeEndpoint(

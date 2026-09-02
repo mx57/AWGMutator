@@ -218,25 +218,25 @@ class TunnelManager(private val context: Context) {
 
         val preparedConfig = if (isCloudflareWarp) {
             rawConfig.copy(
-                h1 = warpH1,
-                h2 = 2L,
-                h3 = 3L,
-                h4 = 4L,
-                jc = 0,
-                jmin = 0,
-                jmax = 0,
-                s1 = 0,
-                s2 = 0,
-                s3 = 0,
-                s4 = 0,
-                i1 = null,
-                i2 = null,
-                i3 = null,
-                i4 = null,
+                h1 = if (rawConfig.h1 > 0L && rawConfig.h1 != 1L) rawConfig.h1 else warpH1,
+                h2 = if (rawConfig.h2 > 0L) rawConfig.h2 else 2L,
+                h3 = if (rawConfig.h3 > 0L) rawConfig.h3 else 3L,
+                h4 = if (rawConfig.h4 > 0L) rawConfig.h4 else 4L,
+                jc = rawConfig.jc,
+                jmin = rawConfig.jmin,
+                jmax = rawConfig.jmax,
+                s1 = rawConfig.s1,
+                s2 = rawConfig.s2,
+                s3 = rawConfig.s3,
+                s4 = rawConfig.s4,
+                i1 = rawConfig.i1,
+                i2 = rawConfig.i2,
+                i3 = rawConfig.i3,
+                i4 = rawConfig.i4,
                 mtu = if (rawConfig.mtu in 1200..1420) rawConfig.mtu else 1280,
                 dns = cleanDns,
                 allowedIps = cleanAllowedIps,
-                endpoint = rawConfig.endpoint.ifBlank { "188.114.97.1:1074" },
+                endpoint = rawConfig.endpoint.ifBlank { "162.159.130.1:1074" },
                 isWarp = true
             )
         } else {
@@ -259,7 +259,7 @@ class TunnelManager(private val context: Context) {
                 mtu = if (rawConfig.mtu in 1200..1420) rawConfig.mtu else 1280,
                 dns = cleanDns,
                 allowedIps = cleanAllowedIps,
-                endpoint = rawConfig.endpoint.ifBlank { "188.114.97.1:1074" },
+                endpoint = rawConfig.endpoint.ifBlank { "162.159.130.1:1074" },
                 isWarp = false
             )
         }
