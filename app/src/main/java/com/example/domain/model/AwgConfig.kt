@@ -105,11 +105,6 @@ data class AwgConfig(
         if (!i3.isNullOrBlank()) builder.appendLine("I3 = ${formatHexPayload(i3)}")
         if (!i4.isNullOrBlank()) builder.appendLine("I4 = ${formatHexPayload(i4)}")
         if (!sni.isNullOrBlank()) builder.appendLine("SNI = $sni")
-        if (!reserved.isNullOrBlank()) {
-            val cleanReserved = com.example.data.remote.CloudflareApi.normalizeReserved(reserved)
-            builder.appendLine("Reserved = $cleanReserved")
-        }
-
         builder.appendLine()
         builder.appendLine("[Peer]")
         builder.appendLine("PublicKey = $peerPublicKey")
@@ -130,6 +125,10 @@ data class AwgConfig(
         builder.appendLine("AllowedIPs = $cleanAllowed")
         val cleanEndpoint = sanitizeEndpoint(endpoint, defaultPort = if (isWarp) 854 else 51820)
         builder.appendLine("Endpoint = $cleanEndpoint")
+        if (!reserved.isNullOrBlank()) {
+            val cleanReserved = com.example.data.remote.CloudflareApi.normalizeReserved(reserved)
+            builder.appendLine("Reserved = $cleanReserved")
+        }
         if (persistentKeepalive > 0) {
             builder.appendLine("PersistentKeepalive = $persistentKeepalive")
         }
