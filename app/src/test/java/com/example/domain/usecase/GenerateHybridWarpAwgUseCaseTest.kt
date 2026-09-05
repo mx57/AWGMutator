@@ -98,7 +98,6 @@ class GenerateHybridWarpAwgUseCaseTest {
         val hybridConfig = result.getOrThrow()
 
         // Verify obfuscation & hybrid specific parameters
-        val expectedH1 = AwgConfig.calculateWarpH1(sampleReserved)
         assertEquals(4, hybridConfig.jc)
         assertEquals(40, hybridConfig.jmin)
         assertEquals(70, hybridConfig.jmax)
@@ -106,7 +105,7 @@ class GenerateHybridWarpAwgUseCaseTest {
         assertEquals(24, hybridConfig.s2)
         assertEquals(0, hybridConfig.s3)
         assertEquals(0, hybridConfig.s4)
-        assertEquals(expectedH1, hybridConfig.h1)
+        assertEquals(1L, hybridConfig.h1)
         assertEquals(2L, hybridConfig.h2)
         assertEquals(3L, hybridConfig.h3)
         assertEquals(4L, hybridConfig.h4)
@@ -135,7 +134,7 @@ class GenerateHybridWarpAwgUseCaseTest {
 
         assertTrue(result.isSuccess)
         val hybridConfig = result.getOrThrow()
-        assertEquals("162.159.130.1:1074", hybridConfig.endpoint)
+        assertEquals("162.159.193.1:2408", hybridConfig.endpoint)
     }
 
     @Test

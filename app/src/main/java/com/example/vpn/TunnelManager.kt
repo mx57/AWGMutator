@@ -231,8 +231,13 @@ class TunnelManager(private val context: Context) {
         }
 
         val cleanAllowedIps = rawConfig.allowedIps.ifBlank { "0.0.0.0/0, ::/0" }
-
-        val warpH1 = AwgConfig.calculateWarpH1(rawConfig.reserved)
+        val normalizedEndpoint = if (
+            isCloudflareWarp && rawConfig.endpoint.trim() == "162.159.130.1:1074"
+        ) {
+            "162.159.193.1:2408"
+        } else {
+            rawConfig.endpoint
+        }
 
         val normalizedJc = rawConfig.jc.coerceIn(0, 10)
         val normalizedJmin = if (normalizedJc > 0 && rawConfig.jmin <= 0) {
@@ -257,7 +262,9 @@ class TunnelManager(private val context: Context) {
 
         val preparedConfig = if (isCloudflareWarp) {
             rawConfig.copy(
-                h1 = if (normalizedH1 != 1L) normalizedH1 else warpH1,
+                // Cloudflare WARP requires the standard WireGuard/AmneziaWG
+                // initiation magic. Reserved bytes are not H1.
+                h1 = 1L,
                 h2 = normalizedH2,
                 h3 = normalizedH3,
                 h4 = normalizedH4,
@@ -275,7 +282,7 @@ class TunnelManager(private val context: Context) {
                 mtu = if (rawConfig.mtu in 1200..1420) rawConfig.mtu else 1280,
                 dns = cleanDns,
                 allowedIps = cleanAllowedIps,
-                endpoint = rawConfig.endpoint.ifBlank { "162.159.130.1:1074" },
+                endpoint = normalizedEndpoint.ifBlank { "162.159.193.1:2408" },
                 persistentKeepalive = normalizedKeepalive,
                 isWarp = true
             )
@@ -299,7 +306,7 @@ class TunnelManager(private val context: Context) {
                 mtu = if (rawConfig.mtu in 1200..1420) rawConfig.mtu else 1280,
                 dns = cleanDns,
                 allowedIps = cleanAllowedIps,
-                endpoint = rawConfig.endpoint.ifBlank { "162.159.130.1:1074" },
+                endpoint = normalizedEndpoint.ifBlank { "162.159.193.1:2408" },
                 persistentKeepalive = normalizedKeepalive,
                 isWarp = false
             )

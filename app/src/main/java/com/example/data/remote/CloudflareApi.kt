@@ -302,17 +302,19 @@ open class CloudflareApi(
         val hostEndpoint = endpointObj?.optString("host")
         val rawEndpointV6 = endpointObj?.optString("v6")
 
-        // Prioritize clean, unblocked Cloudflare Anycast IP ranges (162.159.130.x, 172.64.100.x)
-        // over blocked 188.114.x.x / 162.159.192.x / 162.159.193.x
+        // Keep the endpoint and port assigned by Cloudflare. Replacing a valid
+        // API endpoint with an invented Anycast address/port (for example
+        // 162.159.130.1:1074) produces a native tunnel that is UP but can
+        // never complete its handshake.
         val chosenV4 = when {
-            !rawEndpointV4.isNullOrBlank() && !rawEndpointV4.startsWith("162.159.192") && !rawEndpointV4.startsWith("162.159.193") && !rawEndpointV4.startsWith("188.114") -> rawEndpointV4
-            !hostEndpoint.isNullOrBlank() && !hostEndpoint.contains("engage.cloudflareclient.com") && !hostEndpoint.contains("188.114") -> hostEndpoint
-            else -> "162.159.130.1:1074"
+            !rawEndpointV4.isNullOrBlank() -> rawEndpointV4
+            !hostEndpoint.isNullOrBlank() -> hostEndpoint
+            else -> "162.159.193.1:2408"
         }
-        val endpointV4 = com.example.domain.model.AwgConfig.sanitizeEndpoint(chosenV4, defaultPort = 1074)
+        val endpointV4 = com.example.domain.model.AwgConfig.sanitizeEndpoint(chosenV4, defaultPort = 2408)
         val endpointV6 = com.example.domain.model.AwgConfig.sanitizeEndpoint(
             if (!rawEndpointV6.isNullOrBlank()) rawEndpointV6 else "[2606:4700:d0::a29f:c001]",
-            defaultPort = 1074
+            defaultPort = 2408
         )
 
         // Extract actual client_id assigned by Cloudflare WARP backend
