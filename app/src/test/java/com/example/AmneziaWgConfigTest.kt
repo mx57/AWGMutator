@@ -158,7 +158,7 @@ class AmneziaWgConfigTest {
 
         val nativeConf = exported.lines().filterNot { line ->
             val key = line.substringBefore("=").trim().lowercase()
-            key == "reserved" || key == "sni"
+            key in setOf("reserved", "sni", "i1", "i2", "i3", "i4", "s3", "s4")
         }.joinToString("\n")
         val nativeConfig = Config.parse(ByteArrayInputStream(nativeConf.toByteArray(Charsets.UTF_8)))
         assertNotNull(nativeConfig)

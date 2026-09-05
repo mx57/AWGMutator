@@ -311,10 +311,12 @@ class TunnelManager(private val context: Context) {
         val confText = config.toConfString()
         log("TUN_CONF", "Generated AmneziaWG configuration:\n$confText")
 
-        // The native AmneziaWG Config parser supports I1-I4 and S1-S4.
-        // Only app-level metadata that is not part of this library's native
-        // config model must be removed before parsing.
-        val unsupportedKeys = setOf("reserved", "sni")
+        // amneziawg-android 1.3.0 accepts Jc/Jmin/Jmax/S1/S2/H1-H4, but its
+        // Java Config parser rejects I1-I4, S3/S4, Reserved and SNI. I1/I2
+        // lengths are already converted to S1/S2 by ConfigParser/AwgConfig.
+        val unsupportedKeys = setOf(
+            "reserved", "sni", "i1", "i2", "i3", "i4", "s3", "s4"
+        )
         val nativeConf = confText.lines().filterNot { line ->
             val key = line.substringBefore("=").trim().lowercase()
             key in unsupportedKeys
