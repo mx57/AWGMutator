@@ -129,6 +129,43 @@ class AmneziaWgConfigTest {
     }
 
     @Test
+    fun testWarpReservedInPeerAndNativeInitPayloadArePreserved() {
+        val keyPair1 = WireGuardKeyGen.generateKeyPair()
+        val keyPair2 = WireGuardKeyGen.generateKeyPair()
+        val configText = """
+            [Interface]
+            PrivateKey = ${keyPair1.privateKey}
+            Address = 172.16.0.2/32
+            Jc = 4
+            Jmin = 40
+            Jmax = 70
+            S1 = 8
+            I1 = <b 0x0102030405060708>
+
+            [Peer]
+            PublicKey = ${keyPair2.publicKey}
+            AllowedIPs = 0.0.0.0/0
+            Endpoint = 162.159.192.1:2408
+            Reserved = 86, 45, 120
+        """.trimIndent()
+
+        val config = ConfigParser.parse(configText, "WARP Peer Reserved").getOrThrow()
+        assertEquals("86, 45, 120", config.reserved)
+
+        val exported = config.toConfString()
+        assertTrue(exported.indexOf("[Peer]") < exported.indexOf("Reserved = 86, 45, 120"))
+        assertTrue(exported.contains("I1 = <b 0x0102030405060708>"))
+
+        val nativeConf = exported.lines().filterNot { line ->
+            val key = line.substringBefore("=").trim().lowercase()
+            key == "reserved" || key == "sni"
+        }.joinToString("\n")
+        val nativeConfig = Config.parse(ByteArrayInputStream(nativeConf.toByteArray(Charsets.UTF_8)))
+        assertNotNull(nativeConfig)
+        assertEquals(8, nativeConfig.`interface`.initPacketJunkSize.orElse(0))
+    }
+
+    @Test
     fun testExtractS1FromI1HexPayload() {
         val keyPair1 = WireGuardKeyGen.generateKeyPair()
         val keyPair2 = WireGuardKeyGen.generateKeyPair()

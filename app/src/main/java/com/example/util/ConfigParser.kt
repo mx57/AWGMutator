@@ -159,6 +159,7 @@ object ConfigParser {
             "allowedips", "allowed_ips" -> data.allowedIps = value
             "endpoint" -> data.endpoint = value
             "persistentkeepalive", "persistent_keepalive" -> data.persistentKeepalive = value.toIntOrNull() ?: 25
+            "reserved", "client_id", "clientid" -> data.reserved = value
         }
     }
 
