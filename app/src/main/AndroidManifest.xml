@@ -38,19 +38,12 @@
             </intent-filter>
         </activity>
 
-        <service
-            android:name=".vpn.AwgVpnService"
-            android:permission="android.permission.BIND_VPN_SERVICE"
-            android:foregroundServiceType="specialUse"
-            android:exported="false">
-            <intent-filter>
-                <action android:name="android.net.VpnService" />
-            </intent-filter>
-            <property
-                android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
-                android:value="VPN tunnel and network obfuscation testing service" />
-        </service>
-
+        <!--
+            The native GoBackend owns the TUN device and performs the actual
+            WireGuard/AmneziaWG packet forwarding. Do not register the legacy
+            user-space AwgVpnService as a second VPN provider: Android permits
+            only one active VPN and the two services race for the same consent.
+        -->
         <service
             android:name="org.amnezia.awg.backend.GoBackend$VpnService"
             android:permission="android.permission.BIND_VPN_SERVICE"
