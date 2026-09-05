@@ -19,6 +19,9 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
+import kotlinx.coroutines.CancellationException
 import java.io.ByteArrayInputStream
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -46,6 +49,9 @@ class TunnelManager(private val context: Context) {
 
     private val timeFormat = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
     private val scope = CoroutineScope(Dispatchers.IO + Job())
+    /** Serializes native backend transitions; GoBackend owns one process-wide TUN service. */
+    private val lifecycleMutex = Mutex()
+    private var connectJob: Job? = null
     private var statsJob: Job? = null
     private var watchdogJob: Job? = null
 
@@ -163,22 +169,31 @@ class TunnelManager(private val context: Context) {
             endpoint = sanitizedEndpoint
         )
 
-        scope.launch {
+        connectJob?.cancel()
+        connectJob = scope.launch {
             try {
-                val awgConfig = parseNativeConfig(config)
-                logParsedConfigDiagnostics(awgConfig)
+                lifecycleMutex.withLock {
+                    // A reconnect must not leave the previous native interface alive.
+                    if (_status.value.state == VpnState.CONNECTED || _status.value.state == VpnState.CONNECTING) {
+                        log("TUN_LIFECYCLE", "Stopping previous native tunnel before reconnect")
+                        goBackend.setState(wgTunnel, Tunnel.State.DOWN, null)
+                    }
 
-                log("TUN_LIFECYCLE", "Calling native AmneziaWG GoBackend setState(UP)...")
-                val resultingState = goBackend.setState(wgTunnel, Tunnel.State.UP, awgConfig)
-                log("TUN_LIFECYCLE", "GoBackend setState UP returned: $resultingState")
+                    val awgConfig = parseNativeConfig(config)
+                    logParsedConfigDiagnostics(awgConfig)
 
-                _status.value = VpnStatus(
-                    state = VpnState.CONNECTED,
-                    activeConfigName = config.name,
-                    activeConfigId = config.id,
-                    endpoint = sanitizedEndpoint,
-                    connectedSince = System.currentTimeMillis()
-                )
+                    log("TUN_LIFECYCLE", "Calling native AmneziaWG GoBackend setState(UP)...")
+                    val resultingState = goBackend.setState(wgTunnel, Tunnel.State.UP, awgConfig)
+                    log("TUN_LIFECYCLE", "GoBackend setState UP returned: $resultingState")
+
+                    _status.value = VpnStatus(
+                        state = VpnState.CONNECTED,
+                        activeConfigName = config.name,
+                        activeConfigId = config.id,
+                        endpoint = sanitizedEndpoint,
+                        connectedSince = System.currentTimeMillis()
+                    )
+                }
 
                 // Start periodic traffic polling from native GoBackend statistics
                 startStatsPolling(config)
@@ -190,6 +205,9 @@ class TunnelManager(private val context: Context) {
                 delay(1200)
                 verifyEgressConnectivity(config)
 
+            } catch (e: CancellationException) {
+                log("TUN_LIFECYCLE", "Connection attempt cancelled")
+                throw e
             } catch (e: Exception) {
                 log("TUN_ERROR", "Exception starting WireGuard tunnel: ${e.message}")
                 log("TUN_ERROR", Log.getStackTraceString(e))
@@ -216,19 +234,40 @@ class TunnelManager(private val context: Context) {
 
         val warpH1 = AwgConfig.calculateWarpH1(rawConfig.reserved)
 
+        val normalizedJc = rawConfig.jc.coerceIn(0, 10)
+        val normalizedJmin = if (normalizedJc > 0 && rawConfig.jmin <= 0) {
+            40
+        } else {
+            rawConfig.jmin.coerceIn(0, 1420)
+        }
+        val normalizedJmax = if (normalizedJc > 0 && rawConfig.jmax <= 0) {
+            70.coerceAtLeast(normalizedJmin)
+        } else {
+            rawConfig.jmax.coerceIn(normalizedJmin, 1420)
+        }
+        val normalizedS1 = rawConfig.s1.coerceIn(0, 1420)
+        val normalizedS2 = rawConfig.s2.coerceIn(0, 1420)
+        val normalizedS3 = rawConfig.s3.coerceIn(0, 1420)
+        val normalizedS4 = rawConfig.s4.coerceIn(0, 1420)
+        val normalizedH1 = rawConfig.h1.coerceIn(1L, 4_294_967_295L)
+        val normalizedH2 = rawConfig.h2.coerceIn(1L, 4_294_967_295L)
+        val normalizedH3 = rawConfig.h3.coerceIn(1L, 4_294_967_295L)
+        val normalizedH4 = rawConfig.h4.coerceIn(1L, 4_294_967_295L)
+        val normalizedKeepalive = rawConfig.persistentKeepalive.coerceIn(0, 65535)
+
         val preparedConfig = if (isCloudflareWarp) {
             rawConfig.copy(
-                h1 = if (rawConfig.h1 > 0L && rawConfig.h1 != 1L) rawConfig.h1 else warpH1,
-                h2 = if (rawConfig.h2 > 0L) rawConfig.h2 else 2L,
-                h3 = if (rawConfig.h3 > 0L) rawConfig.h3 else 3L,
-                h4 = if (rawConfig.h4 > 0L) rawConfig.h4 else 4L,
-                jc = rawConfig.jc,
-                jmin = rawConfig.jmin,
-                jmax = rawConfig.jmax,
-                s1 = rawConfig.s1,
-                s2 = rawConfig.s2,
-                s3 = rawConfig.s3,
-                s4 = rawConfig.s4,
+                h1 = if (normalizedH1 != 1L) normalizedH1 else warpH1,
+                h2 = normalizedH2,
+                h3 = normalizedH3,
+                h4 = normalizedH4,
+                jc = normalizedJc,
+                jmin = normalizedJmin,
+                jmax = normalizedJmax,
+                s1 = normalizedS1,
+                s2 = normalizedS2,
+                s3 = normalizedS3,
+                s4 = normalizedS4,
                 i1 = rawConfig.i1,
                 i2 = rawConfig.i2,
                 i3 = rawConfig.i3,
@@ -237,21 +276,22 @@ class TunnelManager(private val context: Context) {
                 dns = cleanDns,
                 allowedIps = cleanAllowedIps,
                 endpoint = rawConfig.endpoint.ifBlank { "162.159.130.1:1074" },
+                persistentKeepalive = normalizedKeepalive,
                 isWarp = true
             )
         } else {
             rawConfig.copy(
-                h1 = if (rawConfig.h1 > 0L) rawConfig.h1 else 1L,
-                h2 = if (rawConfig.h2 > 0L) rawConfig.h2 else 2L,
-                h3 = if (rawConfig.h3 > 0L) rawConfig.h3 else 3L,
-                h4 = if (rawConfig.h4 > 0L) rawConfig.h4 else 4L,
-                jc = rawConfig.jc,
-                jmin = rawConfig.jmin,
-                jmax = rawConfig.jmax,
-                s1 = rawConfig.s1,
-                s2 = rawConfig.s2,
-                s3 = rawConfig.s3,
-                s4 = rawConfig.s4,
+                h1 = normalizedH1,
+                h2 = normalizedH2,
+                h3 = normalizedH3,
+                h4 = normalizedH4,
+                jc = normalizedJc,
+                jmin = normalizedJmin,
+                jmax = normalizedJmax,
+                s1 = normalizedS1,
+                s2 = normalizedS2,
+                s3 = normalizedS3,
+                s4 = normalizedS4,
                 i1 = rawConfig.i1,
                 i2 = rawConfig.i2,
                 i3 = rawConfig.i3,
@@ -260,6 +300,7 @@ class TunnelManager(private val context: Context) {
                 dns = cleanDns,
                 allowedIps = cleanAllowedIps,
                 endpoint = rawConfig.endpoint.ifBlank { "162.159.130.1:1074" },
+                persistentKeepalive = normalizedKeepalive,
                 isWarp = false
             )
         }
@@ -302,6 +343,7 @@ class TunnelManager(private val context: Context) {
 
     fun disconnect() {
         log("TUN_LIFECYCLE", "Disconnecting WireGuard tunnel...")
+        connectJob?.cancel()
         statsJob?.cancel()
         statsJob = null
         watchdogJob?.cancel()
@@ -309,16 +351,18 @@ class TunnelManager(private val context: Context) {
         App.instance.appTrafficTracker.stopTracking()
 
         scope.launch {
-            try {
-                goBackend.setState(wgTunnel, Tunnel.State.DOWN, null)
-                log("TUN_LIFECYCLE", "Tunnel successfully disconnected")
-            } catch (e: Exception) {
-                log("TUN_ERROR", "Error during disconnect: ${e.message}")
-                log("TUN_ERROR", Log.getStackTraceString(e))
-            } finally {
-                _status.value = VpnStatus(
-                    state = VpnState.DISCONNECTED
-                )
+            lifecycleMutex.withLock {
+                try {
+                    goBackend.setState(wgTunnel, Tunnel.State.DOWN, null)
+                    log("TUN_LIFECYCLE", "Tunnel successfully disconnected")
+                } catch (e: Exception) {
+                    log("TUN_ERROR", "Error during disconnect: ${e.message}")
+                    log("TUN_ERROR", Log.getStackTraceString(e))
+                } finally {
+                    _status.value = VpnStatus(
+                        state = VpnState.DISCONNECTED
+                    )
+                }
             }
         }
     }
