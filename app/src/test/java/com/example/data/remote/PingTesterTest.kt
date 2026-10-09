@@ -1,7 +1,18 @@
 package com.example.data.remote
 
+import com.example.domain.model.BlockedService
+import com.example.domain.model.DnsServer
+import com.example.domain.model.ServiceCategory
+import kotlinx.coroutines.runBlocking
+import okhttp3.Interceptor
+import okhttp3.OkHttpClient
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertNotNull
+import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
+import java.io.IOException
 import kotlin.system.measureNanoTime
 
 class PingTesterTest {
@@ -38,6 +49,161 @@ class PingTesterTest {
         val rttMatch2 = Regex("rtt min/avg/max/mdev = [0-9.]+/([0-9.]+)/").find(samplePingOutput2)
         val ms2 = rttMatch2?.groupValues?.getOrNull(1)?.toDoubleOrNull()?.toLong()
         assertEquals(18L, ms2)
+    }
+
+    @Test
+    fun testIsValidHost() {
+        val pingTester = PingTester()
+
+        // Valid hosts
+        assertTrue(pingTester.isValidHost("1.1.1.1"))
+        assertTrue(pingTester.isValidHost("192.168.1.100"))
+        assertTrue(pingTester.isValidHost("2606:4700:4700::1111"))
+        assertTrue(pingTester.isValidHost("::1"))
+        assertTrue(pingTester.isValidHost("example.com"))
+        assertTrue(pingTester.isValidHost("sub.domain.co.uk"))
+
+        // Invalid hosts
+        assertFalse(pingTester.isValidHost(""))
+        assertFalse(pingTester.isValidHost("   "))
+        assertFalse(pingTester.isValidHost("-invalid.com"))
+        assertFalse(pingTester.isValidHost("invalid..com"))
+        assertFalse(pingTester.isValidHost("label_with_underscore.com"))
+        assertFalse(pingTester.isValidHost(":::1"))
+        assertFalse(pingTester.isValidHost("2001:db8::8a2e::7334"))
+        assertFalse(pingTester.isValidHost("a".repeat(254)))
+    }
+
+    @Test
+    fun testParseEndpointHostAndPort() {
+        val pingTester = PingTester()
+
+        // Empty or blank
+        assertEquals(Pair("", 854), pingTester.parseEndpointHostAndPort(""))
+        assertEquals(Pair("", 854), pingTester.parseEndpointHostAndPort("   "))
+
+        // IPv4 with and without port
+        assertEquals(Pair("1.1.1.1", 2408), pingTester.parseEndpointHostAndPort("1.1.1.1:2408"))
+        assertEquals(Pair("1.1.1.1", 854), pingTester.parseEndpointHostAndPort("1.1.1.1"))
+        assertEquals(Pair("1.1.1.1", 854), pingTester.parseEndpointHostAndPort("1.1.1.1:not_a_number"))
+
+        // IPv6 with brackets
+        assertEquals(Pair("2606:4700::1", 2408), pingTester.parseEndpointHostAndPort("[2606:4700::1]:2408"))
+        assertEquals(Pair("2606:4700::1", 854), pingTester.parseEndpointHostAndPort("[2606:4700::1]"))
+
+        // IPv6 without brackets
+        assertEquals(Pair("2606:4700::1", 854), pingTester.parseEndpointHostAndPort("2606:4700::1"))
+    }
+
+    @Test
+    fun testTestEndpoint_withInvalidHost_returnsError() = runBlocking {
+        val pingTester = PingTester()
+
+        val result1 = pingTester.testEndpoint("")
+        assertFalse(result1.isReachable)
+        assertNull(result1.latencyMs)
+        assertEquals("Некорректный хост эндпоинта", result1.error)
+
+        val result2 = pingTester.testEndpoint("-invalid-host:1234")
+        assertFalse(result2.isReachable)
+        assertNull(result2.latencyMs)
+        assertEquals("Некорректный хост эндпоинта", result2.error)
+    }
+
+    @Test
+    fun testTestEndpoint_withUnreachableHost_returnsFailure() = runBlocking {
+        val pingTester = PingTester()
+
+        // Test with non-routable IPv4 address
+        val result = pingTester.testEndpoint("10.255.255.1:1234")
+        assertFalse(result.isReachable)
+        assertNull(result.latencyMs)
+        assertNotNull(result.error)
+    }
+
+    @Test
+    fun testEvaluateTargets_whenEmptyTargets_returnsZeroFitnessAndFallbackMetrics() = runBlocking {
+        val pingTester = PingTester()
+
+        val result = pingTester.evaluateTargets("genome-1", targets = emptyList())
+
+        assertEquals("genome-1", result.genomeId)
+        assertEquals(9999L, result.avgPingMs)
+        assertEquals(9999L, result.minPingMs)
+        assertEquals(9999L, result.maxPingMs)
+        assertEquals(0.0, result.successRate, 0.0001)
+        assertEquals(0.0, result.fitnessScore, 0.0001)
+        assertNotNull(result.errorMessage)
+    }
+
+    @Test
+    fun testProbeService_whenHttpClientThrowsException_fallsBackAndCatchesError() = runBlocking {
+        val failingClient = OkHttpClient.Builder()
+            .addInterceptor(Interceptor { throw IOException("Connection refused by test mock") })
+            .build()
+
+        val pingTester = PingTester(failingClient)
+
+        val mockService = BlockedService(
+            id = "test_service",
+            name = "Test Service",
+            iconEmoji = "🧪",
+            testUrl = "https://10.255.255.1:9999/",
+            fallbackHost = "10.255.255.1",
+            fallbackPort = 9999,
+            category = ServiceCategory.SOCIAL_NETWORK
+        )
+
+        val result = pingTester.probeService(mockService)
+
+        assertFalse(result.isAccessible)
+        assertNull(result.latencyMs)
+        assertFalse(result.isDpiThrottled)
+        assertEquals("Блокировка ТСПУ / DPI Filtered", result.error)
+    }
+
+    @Test
+    fun testEvaluateBlockedServices_whenAllFail_returnsDpiBlockedResults() = runBlocking {
+        val failingClient = OkHttpClient.Builder()
+            .addInterceptor(Interceptor { throw IOException("DPI drop simulated") })
+            .build()
+
+        val pingTester = PingTester(failingClient)
+
+        val mockServices = listOf(
+            BlockedService(
+                id = "s1",
+                name = "Service 1",
+                iconEmoji = "⚡",
+                testUrl = "https://10.255.255.1:9999/",
+                fallbackHost = "10.255.255.1",
+                fallbackPort = 9999,
+                category = ServiceCategory.VIDEO_STREAMING
+            )
+        )
+
+        val results = pingTester.evaluateBlockedServices(mockServices)
+
+        assertEquals(1, results.size)
+        assertFalse(results[0].isAccessible)
+        assertNull(results[0].latencyMs)
+        assertTrue(results[0].isDpiThrottled)
+        assertEquals("DPI Blocked / Timed Out", results[0].error)
+    }
+
+    @Test
+    fun testEvaluateAllDnsServers_whenUdpAndTcpFail_returnsInaccessible() = runBlocking {
+        val pingTester = PingTester()
+
+        val mockServers = listOf(
+            DnsServer("d1", "Unreachable DNS", "10.255.255.1", "10.255.255.2", "Test")
+        )
+
+        val results = pingTester.evaluateAllDnsServers(mockServers)
+
+        assertEquals(1, results.size)
+        assertFalse(results[0].isAccessible)
+        assertNull(results[0].latencyMs)
     }
 
     @Test
