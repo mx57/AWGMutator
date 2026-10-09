@@ -116,7 +116,7 @@ class NetworkEgressVerifier(
                         val warp = lines["warp"]
 
                         if (!ip.isNullOrBlank()) {
-                            com.example.App.instance.tunnelManager.log("EGRESS_PROBE", "Cloudflare Trace Probe Success ($url) -> Public IP=$ip, Loc=$loc, WARP=$warp")
+                            safeLog("EGRESS_PROBE", "Cloudflare Trace Probe Success ($url) -> Public IP=$ip, Loc=$loc, WARP=$warp")
                             return NetworkEgressResult(
                                 isFunctional = true,
                                 publicIp = ip,
@@ -128,11 +128,11 @@ class NetworkEgressVerifier(
                             )
                         }
                     } else {
-                        com.example.App.instance.tunnelManager.log("EGRESS_PROBE", "Cloudflare Trace Probe HTTP ${response.code} from $url")
+                        safeLog("EGRESS_PROBE", "Cloudflare Trace Probe HTTP ${response.code} from $url")
                     }
                 }
             } catch (e: Exception) {
-                com.example.App.instance.tunnelManager.log("EGRESS_PROBE", "Cloudflare Trace Probe failed for $url: ${e.message}")
+                safeLog("EGRESS_PROBE", "Cloudflare Trace Probe failed for $url: ${e.message}")
             }
         }
         return null
@@ -156,7 +156,9 @@ class NetworkEgressVerifier(
                         }
                     }
                 }
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                safeLog("EGRESS_PROBE", "IP probe failed for $url: ${e.message}")
+            }
         }
         return null
     }
@@ -181,14 +183,20 @@ class NetworkEgressVerifier(
                     ds.receive(respPkt)
                     val ok = respPkt.length > 12
                     if (ok) {
-                        com.example.App.instance.tunnelManager.log("DNS_PROBE", "UDP $server:53 DNS probe -> Received ${respPkt.length}B (Functional=true)")
+                        safeLog("DNS_PROBE", "UDP $server:53 DNS probe -> Received ${respPkt.length}B (Functional=true)")
                         return true
                     }
                 }
             } catch (e: Exception) {
-                com.example.App.instance.tunnelManager.log("DNS_PROBE", "UDP $server:53 DNS probe failed: ${e.message}")
+                safeLog("DNS_PROBE", "UDP $server:53 DNS probe failed: ${e.message}")
             }
         }
         return false
+    }
+
+    private fun safeLog(tag: String, message: String) {
+        runCatching {
+            com.example.App.instance.tunnelManager.log(tag, message)
+        }
     }
 }
