@@ -20,8 +20,11 @@ import com.example.util.ConfigParser
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
 import java.net.DatagramSocket
 import java.net.InetAddress
 import java.net.Socket
@@ -203,18 +206,38 @@ class AwgVpnService : VpnService() {
     private fun configureDnsServers(builder: Builder, dnsString: String) {
         val dnsServers = dnsString.split(",").map { it.trim() }.filter { it.isNotBlank() }
         if (dnsServers.isNotEmpty()) {
-            for (dns in dnsServers) {
+            val resolvedList = runBlocking(Dispatchers.IO) {
+                dnsServers.map { dns ->
+                    async {
+                        runCatching {
+                            dns to InetAddress.getByName(dns)
+                        }.getOrNull()
+                    }
+                }.awaitAll().filterNotNull()
+            }
+            for ((dns, inetAddress) in resolvedList) {
                 runCatching {
-                    builder.addDnsServer(InetAddress.getByName(dns))
+                    builder.addDnsServer(inetAddress)
                     App.instance.tunnelManager.log("VPN_ROUTING", "Configured DNS Server: $dns")
                 }
             }
         } else {
-            runCatching {
-                builder.addDnsServer(InetAddress.getByName("1.1.1.1"))
-                builder.addDnsServer(InetAddress.getByName("8.8.8.8"))
-                App.instance.tunnelManager.log("VPN_ROUTING", "Configured default DNS Servers: 1.1.1.1, 8.8.8.8")
+            val defaultDns = listOf("1.1.1.1", "8.8.8.8")
+            val resolvedList = runBlocking(Dispatchers.IO) {
+                defaultDns.map { dns ->
+                    async {
+                        runCatching {
+                            dns to InetAddress.getByName(dns)
+                        }.getOrNull()
+                    }
+                }.awaitAll().filterNotNull()
             }
+            for ((dns, inetAddress) in resolvedList) {
+                runCatching {
+                    builder.addDnsServer(inetAddress)
+                }
+            }
+            App.instance.tunnelManager.log("VPN_ROUTING", "Configured default DNS Servers: 1.1.1.1, 8.8.8.8")
         }
     }
 
