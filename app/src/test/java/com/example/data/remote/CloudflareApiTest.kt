@@ -141,7 +141,7 @@ class CloudflareApiTest {
 
         val warpConfig = api.buildWarpConfigFromResponse(regResult, null, licenseKey = null)
 
-        assertEquals("162.159.130.1:1074", warpConfig.endpointV4)
+        assertEquals("162.159.192.1:2408", warpConfig.endpointV4)
         org.junit.Assert.assertFalse(warpConfig.warpPlusEnabled)
     }
 }

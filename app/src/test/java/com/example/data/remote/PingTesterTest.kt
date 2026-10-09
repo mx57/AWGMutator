@@ -1,10 +1,64 @@
 package com.example.data.remote
 
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Test
 import kotlin.system.measureNanoTime
 
 class PingTesterTest {
+
+    private val pingTester = PingTester()
+
+    @Test
+    fun testIsValidHost_validIPv4() {
+        assertTrue(pingTester.isValidHost("1.1.1.1"))
+        assertTrue(pingTester.isValidHost("8.8.8.8"))
+        assertTrue(pingTester.isValidHost("127.0.0.1"))
+        assertTrue(pingTester.isValidHost("255.255.255.255"))
+        assertTrue(pingTester.isValidHost("0.0.0.0"))
+    }
+
+    @Test
+    fun testIsValidHost_validIPv6() {
+        assertTrue(pingTester.isValidHost("::1"))
+        assertTrue(pingTester.isValidHost("::"))
+        assertTrue(pingTester.isValidHost("2001:db8::1"))
+        assertTrue(pingTester.isValidHost("2606:4700:d0::a29f:c001"))
+        assertTrue(pingTester.isValidHost("fe80::1"))
+        assertTrue(pingTester.isValidHost("::ffff:192.0.2.1"))
+    }
+
+    @Test
+    fun testIsValidHost_validHostnames() {
+        assertTrue(pingTester.isValidHost("google.com"))
+        assertTrue(pingTester.isValidHost("sub.domain-name.co.uk"))
+        assertTrue(pingTester.isValidHost("localhost"))
+        assertTrue(pingTester.isValidHost("host-1"))
+    }
+
+    @Test
+    fun testIsValidHost_rejectsCommandInjectionAndInvalidHosts() {
+        assertFalse("Command injection with semicolon should be rejected", pingTester.isValidHost("1.1.1.1; id"))
+        assertFalse("Command injection with pipe should be rejected", pingTester.isValidHost("1.1.1.1|whoami"))
+        assertFalse("Command injection with ampersand should be rejected", pingTester.isValidHost("1.1.1.1&id"))
+        assertFalse("Command injection with newline should be rejected", pingTester.isValidHost("1.1.1.1\ncat /etc/passwd"))
+        assertFalse("Null byte injection should be rejected", pingTester.isValidHost("1.1.1.1\u0000"))
+        assertFalse("Subshell execution should be rejected", pingTester.isValidHost("1.1.1.1$(id)"))
+        assertFalse("Command substitution should be rejected", pingTester.isValidHost("1.1.1.1`id`"))
+        assertFalse("Leading whitespace should be rejected", pingTester.isValidHost(" -c 1"))
+        assertFalse("Option flag starting with hyphen should be rejected", pingTester.isValidHost("-c"))
+        assertFalse("Path starting with slash should be rejected", pingTester.isValidHost("/bin/sh"))
+        assertFalse("IPv4 with leading zero octet should be rejected", pingTester.isValidHost("01.1.1.1"))
+        assertFalse("IPv4 out-of-range octet should be rejected", pingTester.isValidHost("256.1.1.1"))
+        assertFalse("Non-ASCII Cyrillic hostname should be rejected", pingTester.isValidHost("а.com"))
+        assertFalse("Single colon should be rejected", pingTester.isValidHost(":"))
+        assertFalse("Leading colon without double colon should be rejected", pingTester.isValidHost(":1"))
+        assertFalse("Trailing colon without double colon should be rejected", pingTester.isValidHost("1:"))
+        assertFalse("Hostname starting with hyphen should be rejected", pingTester.isValidHost("-host.com"))
+        assertFalse("Hostname label ending with hyphen should be rejected", pingTester.isValidHost("host-.com"))
+        assertFalse("Empty label in hostname should be rejected", pingTester.isValidHost("host..com"))
+    }
 
     private val samplePingOutput1 = """
         PING 1.1.1.1 (1.1.1.1) 56(84) bytes of data.
