@@ -2,6 +2,9 @@ package com.example.data.remote
 
 import com.example.domain.model.NetworkEgressResult
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
@@ -89,76 +92,112 @@ class NetworkEgressVerifier(
         }
     }
 
-    private fun tryCloudflareTrace(): NetworkEgressResult? {
+    private suspend fun tryCloudflareTrace(): NetworkEgressResult? = coroutineScope {
         val endpoints = listOf(
             "https://1.1.1.1/cdn-cgi/trace",
             "https://www.cloudflare.com/cdn-cgi/trace",
             "https://cloudflare-dns.com/cdn-cgi/trace"
         )
 
-        for (url in endpoints) {
-            try {
-                val request = Request.Builder()
-                    .url(url)
-                    .header("User-Agent", "AWGMutator-EgressProbe/1.0")
-                    .build()
+        val channel = Channel<NetworkEgressResult>(Channel.UNLIMITED)
+        val jobs = endpoints.map { url ->
+            launch(Dispatchers.IO) {
+                try {
+                    val request = Request.Builder()
+                        .url(url)
+                        .header("User-Agent", "AWGMutator-EgressProbe/1.0")
+                        .build()
 
-                client.newCall(request).execute().use { response ->
-                    if (response.isSuccessful) {
-                        val body = response.body?.string().orEmpty()
-                        val lines = body.lines().associate { line ->
-                            val parts = line.split("=", limit = 2)
-                            if (parts.size == 2) parts[0].trim() to parts[1].trim() else "" to ""
+                    client.newCall(request).await().use { response ->
+                        if (response.isSuccessful) {
+                            val body = response.body?.string().orEmpty()
+                            val lines = body.lines().associate { line ->
+                                val parts = line.split("=", limit = 2)
+                                if (parts.size == 2) parts[0].trim() to parts[1].trim() else "" to ""
+                            }
+
+                            val ip = lines["ip"]
+                            val loc = lines["loc"]
+                            val warp = lines["warp"]
+
+                            if (!ip.isNullOrBlank()) {
+                                logSafe("EGRESS_PROBE", "Cloudflare Trace Probe Success ($url) -> Public IP=$ip, Loc=$loc, WARP=$warp")
+                                val result = NetworkEgressResult(
+                                    isFunctional = true,
+                                    publicIp = ip,
+                                    countryCode = loc ?: "CF",
+                                    cityOrIsp = "Cloudflare Edge ($loc)",
+                                    warpStatus = warp,
+                                    isWarpActive = warp == "on" || warp == "plus",
+                                    testedAt = System.currentTimeMillis()
+                                )
+                                channel.trySend(result)
+                            }
+                        } else {
+                            logSafe("EGRESS_PROBE", "Cloudflare Trace Probe HTTP ${response.code} from $url")
                         }
-
-                        val ip = lines["ip"]
-                        val loc = lines["loc"]
-                        val warp = lines["warp"]
-
-                        if (!ip.isNullOrBlank()) {
-                            com.example.App.instance.tunnelManager.log("EGRESS_PROBE", "Cloudflare Trace Probe Success ($url) -> Public IP=$ip, Loc=$loc, WARP=$warp")
-                            return NetworkEgressResult(
-                                isFunctional = true,
-                                publicIp = ip,
-                                countryCode = loc ?: "CF",
-                                cityOrIsp = "Cloudflare Edge ($loc)",
-                                warpStatus = warp,
-                                isWarpActive = warp == "on" || warp == "plus",
-                                testedAt = System.currentTimeMillis()
-                            )
-                        }
-                    } else {
-                        com.example.App.instance.tunnelManager.log("EGRESS_PROBE", "Cloudflare Trace Probe HTTP ${response.code} from $url")
                     }
+                } catch (e: Exception) {
+                    logSafe("EGRESS_PROBE", "Cloudflare Trace Probe failed for $url: ${e.message}")
                 }
-            } catch (e: Exception) {
-                com.example.App.instance.tunnelManager.log("EGRESS_PROBE", "Cloudflare Trace Probe failed for $url: ${e.message}")
             }
         }
-        return null
+
+        var result: NetworkEgressResult? = null
+        val completionJob = launch {
+            jobs.forEach { it.join() }
+            channel.close()
+        }
+
+        for (res in channel) {
+            result = res
+            break
+        }
+
+        jobs.forEach { it.cancel() }
+        completionJob.cancel()
+        result
     }
 
-    private fun tryIpify(): String? {
+    private suspend fun tryIpify(): String? = coroutineScope {
         val ipEndpoints = listOf(
             "https://api.ipify.org",
             "https://icanhazip.com",
             "https://checkip.amazonaws.com",
             "https://ifconfig.me/ip"
         )
-        for (url in ipEndpoints) {
-            try {
-                val request = Request.Builder().url(url).build()
-                client.newCall(request).execute().use { resp ->
-                    if (resp.isSuccessful) {
-                        val ip = resp.body?.string()?.trim()
-                        if (!ip.isNullOrBlank() && (ip.contains(".") || ip.contains(":"))) {
-                            return ip
+
+        val channel = Channel<String>(Channel.UNLIMITED)
+        val jobs = ipEndpoints.map { url ->
+            launch(Dispatchers.IO) {
+                try {
+                    val request = Request.Builder().url(url).build()
+                    client.newCall(request).await().use { resp ->
+                        if (resp.isSuccessful) {
+                            val ip = resp.body?.string()?.trim()
+                            if (!ip.isNullOrBlank() && (ip.contains(".") || ip.contains(":"))) {
+                                channel.trySend(ip)
+                            }
                         }
                     }
-                }
-            } catch (_: Exception) {}
+                } catch (_: Exception) {}
+            }
         }
-        return null
+
+        var result: String? = null
+        val completionJob = launch {
+            jobs.forEach { it.join() }
+            channel.close()
+        }
+
+        for (res in channel) {
+            result = res
+            break
+        }
+
+        jobs.forEach { it.cancel() }
+        completionJob.cancel()
+        result
     }
 
     private fun checkDnsResolution(): Boolean {
@@ -181,14 +220,20 @@ class NetworkEgressVerifier(
                     ds.receive(respPkt)
                     val ok = respPkt.length > 12
                     if (ok) {
-                        com.example.App.instance.tunnelManager.log("DNS_PROBE", "UDP $server:53 DNS probe -> Received ${respPkt.length}B (Functional=true)")
+                        logSafe("DNS_PROBE", "UDP $server:53 DNS probe -> Received ${respPkt.length}B (Functional=true)")
                         return true
                     }
                 }
             } catch (e: Exception) {
-                com.example.App.instance.tunnelManager.log("DNS_PROBE", "UDP $server:53 DNS probe failed: ${e.message}")
+                logSafe("DNS_PROBE", "UDP $server:53 DNS probe failed: ${e.message}")
             }
         }
         return false
+    }
+
+    private fun logSafe(tag: String, message: String) {
+        try {
+            com.example.App.instance.tunnelManager.log(tag, message)
+        } catch (_: Throwable) {}
     }
 }
