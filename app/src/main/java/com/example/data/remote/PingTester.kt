@@ -46,7 +46,7 @@ data class EndpointProbeResult(
  * Evaluates reachability, latency, and Anti-DPI bypass capabilities across popular blocked services
  * (YouTube, Instagram, Telegram, Twitch, X/Twitter, Discord) via HTTP HEAD and raw TCP/UDP handshakes.
  */
-class PingTester(
+open class PingTester(
     private val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(1500, TimeUnit.MILLISECONDS)
         .readTimeout(1500, TimeUnit.MILLISECONDS)
@@ -126,7 +126,7 @@ class PingTester(
      * Sends a real UDP WireGuard Noise Handshake Initiation packet directly to the IP and port.
      * Prevents false positives from ICMP ping or TCP 443 web connections on blocked UDP Anycast endpoints.
      */
-    suspend fun testEndpoint(
+    open suspend fun testEndpoint(
         endpoint: String,
         peerPublicKey: String = com.example.util.WireGuardProbe.DEFAULT_CLOUDFLARE_WARP_PUBKEY,
         clientPrivateKey: String? = null,
