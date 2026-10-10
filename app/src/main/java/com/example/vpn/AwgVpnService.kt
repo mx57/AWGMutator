@@ -182,7 +182,7 @@ class AwgVpnService : VpnService() {
             val ipStr = parts[0].trim()
             val prefix = if (parts.size > 1) parts[1].trim().toIntOrNull() ?: if (ipStr.contains(":")) 64 else 32 else if (ipStr.contains(":")) 64 else 32
             runCatching {
-                val inet = InetAddress.getByName(ipStr)
+                val inet = parseNumericAddressOrNull(ipStr) ?: return@runCatching
                 builder.addAddress(inet, prefix)
                 if (ipStr.contains(":")) hasIpv6Address = true else hasIpv4Address = true
                 App.instance.tunnelManager.log("VPN_ROUTING", "Assigned TUN Address: $ipStr/$prefix")
@@ -191,13 +191,15 @@ class AwgVpnService : VpnService() {
 
         if (!hasIpv4Address) {
             runCatching {
-                builder.addAddress(InetAddress.getByName("10.2.0.2"), 32)
+                val inet = parseNumericAddressOrNull("10.2.0.2") ?: return@runCatching
+                builder.addAddress(inet, 32)
                 App.instance.tunnelManager.log("VPN_ROUTING", "Assigned default fallback IPv4: 10.2.0.2/32")
             }
         }
         if (!hasIpv6Address) {
             runCatching {
-                builder.addAddress(InetAddress.getByName("fd00:1:1::2"), 64)
+                val inet = parseNumericAddressOrNull("fd00:1:1::2") ?: return@runCatching
+                builder.addAddress(inet, 64)
                 App.instance.tunnelManager.log("VPN_ROUTING", "Assigned default fallback IPv6: fd00:1:1::2/64")
             }
         }
@@ -245,11 +247,13 @@ class AwgVpnService : VpnService() {
         val routes = allowedIpsString.split(",").map { it.trim() }.filter { it.isNotBlank() }
         if (routes.isEmpty() || routes.any { it == "0.0.0.0/0" }) {
             runCatching {
-                builder.addRoute(InetAddress.getByName("0.0.0.0"), 0)
+                val inet = parseNumericAddressOrNull("0.0.0.0") ?: return@runCatching
+                builder.addRoute(inet, 0)
                 App.instance.tunnelManager.log("VPN_ROUTING", "Route Table: Added IPv4 default route 0.0.0.0/0 -> TUN")
             }
             runCatching {
-                builder.addRoute(InetAddress.getByName("::"), 0)
+                val inet = parseNumericAddressOrNull("::") ?: return@runCatching
+                builder.addRoute(inet, 0)
                 App.instance.tunnelManager.log("VPN_ROUTING", "Route Table: Added IPv6 default route ::/0 -> TUN")
             }
         } else {
@@ -259,7 +263,8 @@ class AwgVpnService : VpnService() {
                     val ip = parts[0].trim()
                     val mask = if (parts.size > 1) parts[1].trim().toIntOrNull() ?: if (ip.contains(":")) 64 else 32 else if (ip.contains(":")) 64 else 32
                     runCatching {
-                        builder.addRoute(InetAddress.getByName(ip), mask)
+                        val inet = parseNumericAddressOrNull(ip) ?: return@runCatching
+                        builder.addRoute(inet, mask)
                         App.instance.tunnelManager.log("VPN_ROUTING", "Route Table: Added custom route $ip/$mask -> TUN")
                     }
                 }
@@ -441,6 +446,62 @@ class AwgVpnService : VpnService() {
                 App.instance.tunnelManager.log("SOCKET_PROTECT", "Protected UDP DatagramSocket fd -> bypasses TUN")
             }
             return res
+        }
+
+        fun parseNumericAddressOrNull(ipStr: String): InetAddress? {
+            val trimmed = ipStr.trim()
+            if (trimmed.isEmpty()) return null
+            if (!isNumericIpLiteral(trimmed)) return null
+
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) {
+                runCatching {
+                    if (android.net.InetAddresses.isNumericAddress(trimmed)) {
+                        return android.net.InetAddresses.parseNumericAddress(trimmed)
+                    }
+                }
+            }
+            return runCatching { InetAddress.getByName(trimmed) }.getOrNull()
+        }
+
+        fun isNumericIpLiteral(ipStr: String): Boolean {
+            val trimmed = ipStr.trim()
+            if (trimmed.isEmpty()) return false
+            return if (trimmed.contains(":")) {
+                isIpv6Literal(trimmed)
+            } else {
+                isIpv4Literal(trimmed)
+            }
+        }
+
+        private fun isIpv4Literal(ipStr: String): Boolean {
+            val parts = ipStr.split(".")
+            if (parts.size != 4) return false
+            for (part in parts) {
+                if (part.isEmpty() || part.length > 3) return false
+                val value = part.toIntOrNull() ?: return false
+                if (value !in 0..255) return false
+                if (part.length > 1 && part.startsWith('0')) return false
+            }
+            return true
+        }
+
+        private fun isIpv6Literal(ipStr: String): Boolean {
+            val cleanIp = ipStr.substringBefore('%')
+            val colons = cleanIp.count { it == ':' }
+            if (colons < 2 || colons > 7) return false
+            val hasDoubleColon = cleanIp.contains("::")
+            if (hasDoubleColon && cleanIp.indexOf("::") != cleanIp.lastIndexOf("::")) return false
+            val parts = cleanIp.split(":")
+            for (part in parts) {
+                if (part.isEmpty()) continue
+                if (part.contains('.')) {
+                    if (!isIpv4Literal(part)) return false
+                } else {
+                    if (part.length > 4) return false
+                    if (part.toIntOrNull(16) == null) return false
+                }
+            }
+            return true
         }
     }
 }
