@@ -159,7 +159,7 @@ class RootTunnelManager(private val context: Context) {
         Result.success(Unit)
     }
 
-    private suspend fun teardownInterface() {
+    private suspend fun teardownInterface() = withContext(Dispatchers.IO) {
         RootRunner.execute(
             // 1. Remove isolated iptables rules without flushing system tables
             "iptables -t nat -D OUTPUT -j AWG_OUTPUT || true",
@@ -198,7 +198,9 @@ class RootTunnelManager(private val context: Context) {
                         val tx = lines.getOrNull(1)?.trim()?.toLongOrNull() ?: 0L
                         _status.value = _status.value.copy(rxBytes = rx, txBytes = tx)
                     }
-                } catch (_: Exception) {}
+                } catch (e: Exception) {
+                    com.example.App.instance.tunnelManager.log("ROOT_STATS_ERR", "Failed to query root stats: ${e.message}")
+                }
             }
         }
     }

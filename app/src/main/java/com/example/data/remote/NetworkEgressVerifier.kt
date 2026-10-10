@@ -1,8 +1,9 @@
 package com.example.data.remote
 
 import com.example.domain.model.NetworkEgressResult
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.cancelChildren
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -13,6 +14,7 @@ import java.net.DatagramSocket
 import java.net.InetAddress
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Verifies outbound network reachability and internet exit (egress) through the active VPN / Root tunnel.
@@ -93,26 +95,49 @@ class NetworkEgressVerifier(
         }
     }
 
-    private fun tryCloudflareTrace(): NetworkEgressResult? {
-        val endpoints = listOf(
-            "https://1.1.1.1/cdn-cgi/trace",
-            "https://www.cloudflare.com/cdn-cgi/trace",
-            "https://cloudflare-dns.com/cdn-cgi/trace"
-        )
+    suspend fun tryCloudflareTrace(endpoints: List<String> = DEFAULT_CLOUDFLARE_ENDPOINTS): NetworkEgressResult? = coroutineScope {
+        if (endpoints.isEmpty()) return@coroutineScope null
+        val deferred = CompletableDeferred<NetworkEgressResult>()
+        val failureCount = AtomicInteger(0)
 
-        for (url in endpoints) {
-            try {
-                val request = Request.Builder()
-                    .url(url)
-                    .header("User-Agent", "AWGMutator-EgressProbe/1.0")
-                    .build()
+        endpoints.forEach { url ->
+            launch(Dispatchers.IO) {
+                try {
+                    val request = Request.Builder()
+                        .url(url)
+                        .header("User-Agent", "AWGMutator-EgressProbe/1.0")
+                        .build()
 
-                client.newCall(request).execute().use { response ->
-                    if (response.isSuccessful) {
-                        val body = response.body?.string().orEmpty()
-                        val lines = body.lines().associate { line ->
-                            val parts = line.split("=", limit = 2)
-                            if (parts.size == 2) parts[0].trim() to parts[1].trim() else "" to ""
+                    client.newCall(request).execute().use { response ->
+                        if (response.isSuccessful) {
+                            val body = response.body?.string().orEmpty()
+                            val lines = body.lines().associate { line ->
+                                val parts = line.split("=", limit = 2)
+                                if (parts.size == 2) parts[0].trim() to parts[1].trim() else "" to ""
+                            }
+
+                            val ip = lines["ip"]
+                            val loc = lines["loc"]
+                            val warp = lines["warp"]
+
+                            if (!ip.isNullOrBlank()) {
+                                com.example.App.instance.tunnelManager.log("EGRESS_PROBE", "Cloudflare Trace Probe Success ($url) -> Public IP=$ip, Loc=$loc, WARP=$warp")
+                                val egressResult = NetworkEgressResult(
+                                    isFunctional = true,
+                                    publicIp = ip,
+                                    countryCode = loc ?: "CF",
+                                    cityOrIsp = "Cloudflare Edge ($loc)",
+                                    warpStatus = warp,
+                                    isWarpActive = warp == "on" || warp == "plus",
+                                    testedAt = System.currentTimeMillis()
+                                )
+                                if (deferred.complete(egressResult)) {
+                                    this@coroutineScope.coroutineContext.cancelChildren()
+                                }
+                                return@launch
+                            }
+                        } else {
+                            com.example.App.instance.tunnelManager.log("EGRESS_PROBE", "Cloudflare Trace Probe HTTP ${response.code} from $url")
                         }
 
                         val ip = lines["ip"]
@@ -134,37 +159,54 @@ class NetworkEgressVerifier(
                     } else {
                         safeLog("EGRESS_PROBE", "Cloudflare Trace Probe HTTP ${response.code} from $url")
                     }
+                } catch (e: Exception) {
+                    com.example.App.instance.tunnelManager.log("EGRESS_PROBE", "Cloudflare Trace Probe failed for $url: ${e.message}")
+                }
+
+                if (failureCount.incrementAndGet() == endpoints.size) {
+                    deferred.completeExceptionally(NoSuchElementException("All trace endpoints failed"))
                 }
             } catch (e: Exception) {
                 safeLog("EGRESS_PROBE", "Cloudflare Trace Probe failed for $url: ${e.message}")
             }
         }
-        return null
+
+        try {
+            deferred.await()
+        } catch (_: Exception) {
+            null
+        }
     }
 
-    private fun tryIpify(): String? {
-        val ipEndpoints = listOf(
-            "https://api.ipify.org",
-            "https://icanhazip.com",
-            "https://checkip.amazonaws.com",
-            "https://ifconfig.me/ip"
-        )
-        for (url in ipEndpoints) {
-            try {
-                val request = Request.Builder().url(url).build()
-                client.newCall(request).execute().use { resp ->
-                    if (resp.isSuccessful) {
-                        val ip = resp.body?.string()?.trim()
-                        if (!ip.isNullOrBlank() && (ip.contains(".") || ip.contains(":"))) {
-                            return ip
+    suspend fun tryIpify(endpoints: List<String> = DEFAULT_IPIFY_ENDPOINTS): String? = coroutineScope {
+        if (endpoints.isEmpty()) return@coroutineScope null
+        val deferred = CompletableDeferred<String>()
+        val failureCount = AtomicInteger(0)
+
+        endpoints.forEach { url ->
+            launch(Dispatchers.IO) {
+                try {
+                    val request = Request.Builder().url(url).build()
+                    client.newCall(request).execute().use { resp ->
+                        if (resp.isSuccessful) {
+                            val ip = resp.body?.string()?.trim()
+                            if (!ip.isNullOrBlank() && (ip.contains(".") || ip.contains(":"))) {
+                                if (deferred.complete(ip)) {
+                                    this@coroutineScope.coroutineContext.cancelChildren()
+                                }
+                                return@launch
+                            }
                         }
                     }
+                } catch (_: Exception) {}
+
+                if (failureCount.incrementAndGet() == endpoints.size) {
+                    deferred.completeExceptionally(NoSuchElementException("All IP endpoints failed"))
                 }
             } catch (e: Exception) {
                 safeLog("EGRESS_PROBE", "IP probe failed for $url: ${e.message}")
             }
         }
-        return null
     }
 
     internal suspend fun checkDnsResolution(

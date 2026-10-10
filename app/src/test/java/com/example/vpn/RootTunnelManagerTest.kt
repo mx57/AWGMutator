@@ -11,7 +11,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
-import kotlin.coroutines.Continuation
 
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [34])
@@ -30,23 +29,22 @@ class RootTunnelManagerTest {
     fun testInitialStatusIsDisconnected() {
         val status = rootTunnelManager.status.value
         assertEquals(VpnState.DISCONNECTED, status.state)
+        assertFalse(status.isRootTunnel)
     }
 
     @Test
-    fun testRootModePreferenceToggle() {
+    fun testIsRootModeEnabledPreference() {
         assertFalse(rootTunnelManager.isRootModeEnabled)
         rootTunnelManager.isRootModeEnabled = true
         assertEquals(true, rootTunnelManager.isRootModeEnabled)
     }
 
     @Test
-    fun testCheckInterfaceUp_returnsFalseWhenInterfaceDoesNotExist() = runBlocking {
-        val method = RootTunnelManager::class.java.declaredMethods.first { it.name == "checkInterfaceUp" }
-        method.isAccessible = true
-        // For suspend functions with no explicit arguments, reflection requires Continuation
-        val isUp = kotlin.coroutines.intrinsics.suspendCoroutineUninterceptedOrReturn<Boolean> { continuation ->
-            method.invoke(rootTunnelManager, continuation)
-        }
-        assertFalse(isUp)
+    fun testDisconnectUpdatesStatusToDisconnected() = runBlocking {
+        val result = rootTunnelManager.disconnect()
+        assertEquals(true, result.isSuccess)
+        val status = rootTunnelManager.status.value
+        assertEquals(VpnState.DISCONNECTED, status.state)
+        assertFalse(status.isRootTunnel)
     }
 }
