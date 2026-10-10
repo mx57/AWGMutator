@@ -319,7 +319,9 @@ object WireGuardProbe {
                     cipher.updateAAD(ad)
                 }
                 return cipher.doFinal(plaintext)
-            } catch (_: Exception) {}
+            } catch (e: Exception) {
+                android.util.Log.w("WireGuardProbe", "Cipher $algo failed, trying fallback", e)
+            }
         }
 
         // Fallback: Pure Kotlin / RFC Poly1305 tag simulation over Blake2s

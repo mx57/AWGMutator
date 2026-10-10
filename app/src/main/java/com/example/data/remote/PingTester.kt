@@ -527,7 +527,7 @@ open class PingTester(
     /**
      * Concurrently probes all targeted blocked services to verify anti-censorship reachability.
      */
-    suspend fun probeBlockedServices(services: List<BlockedService> = BlockedServicesCatalog.allServices): List<ServiceProbeResult> = withContext(Dispatchers.IO) {
+    open suspend fun probeBlockedServices(services: List<BlockedService> = BlockedServicesCatalog.allServices): List<ServiceProbeResult> = withContext(Dispatchers.IO) {
         coroutineScope {
             services.map { service ->
                 async {
