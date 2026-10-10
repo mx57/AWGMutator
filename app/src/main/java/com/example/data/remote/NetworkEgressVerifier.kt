@@ -139,6 +139,25 @@ class NetworkEgressVerifier(
                         } else {
                             com.example.App.instance.tunnelManager.log("EGRESS_PROBE", "Cloudflare Trace Probe HTTP ${response.code} from $url")
                         }
+
+                        val ip = lines["ip"]
+                        val loc = lines["loc"]
+                        val warp = lines["warp"]
+
+                        if (!ip.isNullOrBlank()) {
+                            safeLog("EGRESS_PROBE", "Cloudflare Trace Probe Success ($url) -> Public IP=$ip, Loc=$loc, WARP=$warp")
+                            return NetworkEgressResult(
+                                isFunctional = true,
+                                publicIp = ip,
+                                countryCode = loc ?: "CF",
+                                cityOrIsp = "Cloudflare Edge ($loc)",
+                                warpStatus = warp,
+                                isWarpActive = warp == "on" || warp == "plus",
+                                testedAt = System.currentTimeMillis()
+                            )
+                        }
+                    } else {
+                        safeLog("EGRESS_PROBE", "Cloudflare Trace Probe HTTP ${response.code} from $url")
                     }
                 } catch (e: Exception) {
                     com.example.App.instance.tunnelManager.log("EGRESS_PROBE", "Cloudflare Trace Probe failed for $url: ${e.message}")
@@ -147,6 +166,8 @@ class NetworkEgressVerifier(
                 if (failureCount.incrementAndGet() == endpoints.size) {
                     deferred.completeExceptionally(NoSuchElementException("All trace endpoints failed"))
                 }
+            } catch (e: Exception) {
+                safeLog("EGRESS_PROBE", "Cloudflare Trace Probe failed for $url: ${e.message}")
             }
         }
 
@@ -182,13 +203,9 @@ class NetworkEgressVerifier(
                 if (failureCount.incrementAndGet() == endpoints.size) {
                     deferred.completeExceptionally(NoSuchElementException("All IP endpoints failed"))
                 }
+            } catch (e: Exception) {
+                safeLog("EGRESS_PROBE", "IP probe failed for $url: ${e.message}")
             }
-        }
-
-        try {
-            deferred.await()
-        } catch (_: Exception) {
-            null
         }
     }
 
@@ -213,12 +230,12 @@ class NetworkEgressVerifier(
                     ds.receive(respPkt)
                     val ok = respPkt.length > 12
                     if (ok) {
-                        logSafe("DNS_PROBE", "UDP $server:53 DNS probe -> Received ${respPkt.length}B (Functional=true)")
+                        safeLog("DNS_PROBE", "UDP $server:53 DNS probe -> Received ${respPkt.length}B (Functional=true)")
                         return true
                     }
                 }
             } catch (e: Exception) {
-                logSafe("DNS_PROBE", "UDP $server:53 DNS probe failed: ${e.message}")
+                safeLog("DNS_PROBE", "UDP $server:53 DNS probe failed: ${e.message}")
             }
         }
         var completed = 0
@@ -285,24 +302,9 @@ class NetworkEgressVerifier(
         }
     }
 
-    private fun logSafe(tag: String, message: String) {
-        try {
+    private fun safeLog(tag: String, message: String) {
+        runCatching {
             com.example.App.instance.tunnelManager.log(tag, message)
-        } catch (_: Throwable) {}
-    }
-
-    companion object {
-        val DEFAULT_CLOUDFLARE_ENDPOINTS = listOf(
-            "https://1.1.1.1/cdn-cgi/trace",
-            "https://www.cloudflare.com/cdn-cgi/trace",
-            "https://cloudflare-dns.com/cdn-cgi/trace"
-        )
-
-        val DEFAULT_IPIFY_ENDPOINTS = listOf(
-            "https://api.ipify.org",
-            "https://icanhazip.com",
-            "https://checkip.amazonaws.com",
-            "https://ifconfig.me/ip"
-        )
+        }
     }
 }
