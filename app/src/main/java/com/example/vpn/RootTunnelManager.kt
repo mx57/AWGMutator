@@ -159,7 +159,7 @@ class RootTunnelManager(private val context: Context) {
         Result.success(Unit)
     }
 
-    private suspend fun teardownInterface() {
+    private suspend fun teardownInterface() = withContext(Dispatchers.IO) {
         RootRunner.execute(
             // 1. Remove isolated iptables rules without flushing system tables
             "iptables -t nat -D OUTPUT -j AWG_OUTPUT || true",
