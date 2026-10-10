@@ -115,7 +115,7 @@ class CloudflareApiTest {
     }
 
     @Test
-    fun testBuildWarpConfigFromResponse_withBlockedEndpoints_fallbackToAnycast() {
+    fun testBuildWarpConfigFromResponse_keepsAssignedEndpoint() {
         val api = CloudflareApi()
         val dummyKeyPair = com.example.util.WireGuardKeyGen.generateKeyPair()
         val regJson = org.json.JSONObject().apply {
