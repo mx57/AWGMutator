@@ -198,7 +198,9 @@ class RootTunnelManager(private val context: Context) {
                         val tx = lines.getOrNull(1)?.trim()?.toLongOrNull() ?: 0L
                         _status.value = _status.value.copy(rxBytes = rx, txBytes = tx)
                     }
-                } catch (_: Exception) {}
+                } catch (e: Exception) {
+                    com.example.App.instance.tunnelManager.log("ROOT_STATS_ERR", "Failed to query root stats: ${e.message}")
+                }
             }
         }
     }
