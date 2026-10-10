@@ -6,6 +6,8 @@ import android.content.pm.PackageInfo
 import androidx.test.core.app.ApplicationProvider
 import com.example.vpn.AppTrafficTracker
 import com.example.vpn.SplitTunnelManager
+import android.provider.Settings
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Before
 import org.junit.Test
@@ -59,5 +61,13 @@ class AppTrafficTrackerTest {
 
         tracker.stopTracking()
         assertNotNull(tracker)
+    }
+
+    @Test
+    fun testOpenUsageAccessSettings() {
+        AppTrafficTracker.openUsageAccessSettings(context)
+        val startedIntent = shadowOf(context as android.app.Application).nextStartedActivity
+        assertNotNull(startedIntent)
+        assertEquals(Settings.ACTION_USAGE_ACCESS_SETTINGS, startedIntent.action)
     }
 }
