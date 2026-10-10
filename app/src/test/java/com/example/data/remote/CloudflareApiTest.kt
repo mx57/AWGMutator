@@ -115,7 +115,7 @@ class CloudflareApiTest {
     }
 
     @Test
-    fun testBuildWarpConfigFromResponse_withBlockedEndpoints_fallbackToAnycast() {
+    fun testBuildWarpConfigFromResponse_keepsAssignedEndpoint() {
         val api = CloudflareApi()
         val dummyKeyPair = com.example.util.WireGuardKeyGen.generateKeyPair()
         val regJson = org.json.JSONObject().apply {
@@ -141,7 +141,7 @@ class CloudflareApiTest {
 
         val warpConfig = api.buildWarpConfigFromResponse(regResult, null, licenseKey = null)
 
-        assertEquals("162.159.130.1:1074", warpConfig.endpointV4)
+        assertEquals("162.159.192.1:2408", warpConfig.endpointV4)
         org.junit.Assert.assertFalse(warpConfig.warpPlusEnabled)
     }
 }
