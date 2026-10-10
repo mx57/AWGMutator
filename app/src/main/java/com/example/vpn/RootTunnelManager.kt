@@ -178,10 +178,10 @@ class RootTunnelManager(private val context: Context) {
         )
     }
 
-    private suspend fun checkInterfaceUp(): Boolean {
+    private suspend fun checkInterfaceUp(): Boolean = withContext(Dispatchers.IO) {
         val safeIface = RootRunner.escapeArg(ifaceName)
         val check = RootRunner.execute("ip link show dev $safeIface")
-        return check.isSuccess && check.stdout.contains(ifaceName)
+        check.isSuccess && check.stdout.contains(ifaceName)
     }
 
     private fun startStatsMonitor() {
@@ -198,7 +198,9 @@ class RootTunnelManager(private val context: Context) {
                         val tx = lines.getOrNull(1)?.trim()?.toLongOrNull() ?: 0L
                         _status.value = _status.value.copy(rxBytes = rx, txBytes = tx)
                     }
-                } catch (_: Exception) {}
+                } catch (e: Exception) {
+                    com.example.App.instance.tunnelManager.log("ROOT_STATS_ERR", "Failed to query root stats: ${e.message}")
+                }
             }
         }
     }
