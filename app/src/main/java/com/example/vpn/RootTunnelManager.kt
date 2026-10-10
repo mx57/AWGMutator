@@ -178,10 +178,10 @@ class RootTunnelManager(private val context: Context) {
         )
     }
 
-    private suspend fun checkInterfaceUp(): Boolean {
+    private suspend fun checkInterfaceUp(): Boolean = withContext(Dispatchers.IO) {
         val safeIface = RootRunner.escapeArg(ifaceName)
         val check = RootRunner.execute("ip link show dev $safeIface")
-        return check.isSuccess && check.stdout.contains(ifaceName)
+        check.isSuccess && check.stdout.contains(ifaceName)
     }
 
     private fun startStatsMonitor() {

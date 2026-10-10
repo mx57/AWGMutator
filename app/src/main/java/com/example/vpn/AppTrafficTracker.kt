@@ -27,6 +27,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import android.util.Log
 import java.util.concurrent.ConcurrentHashMap
 
 data class CachedAppMeta(
@@ -119,13 +120,16 @@ class AppTrafficTracker(
                     data = Uri.parse("package:${context.packageName}")
                 }
                 context.startActivity(intent)
-            } catch (_: Exception) {
+            } catch (e: Exception) {
+                Log.w("AppTrafficTracker", "Failed to open package-specific usage access settings, trying fallback", e)
                 try {
                     val intent = Intent(Settings.ACTION_USAGE_ACCESS_SETTINGS).apply {
                         flags = Intent.FLAG_ACTIVITY_NEW_TASK
                     }
                     context.startActivity(intent)
-                } catch (_: Exception) {}
+                } catch (ex: Exception) {
+                    Log.e("AppTrafficTracker", "Failed to open general usage access settings", ex)
+                }
             }
         }
     }
@@ -342,7 +346,7 @@ class AppTrafficTracker(
         val deltaSeconds = ((currentTime - lastSampleTime) / 1000.0).coerceIn(0.4, 5.0)
 
         val splitMode = splitTunnelManager.mode
-        val selectedPackages = splitTunnelManager.getSelectedPackages()
+        val selectedPackages = splitTunnelManager.getSelectedPackages().toSet()
 
         // 1. Gather stats from VPN NetworkStatsManager
         val vpnNsmMap = queryVpnNetworkStats()

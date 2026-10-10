@@ -1,5 +1,6 @@
 package com.example.util
 
+import android.util.Log
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
@@ -96,7 +97,8 @@ object RootRunner {
             } finally {
                 try {
                     process?.destroy()
-                } catch (_: Exception) {
+                } catch (e: Exception) {
+                    Log.w("RootRunner", "Failed to destroy process", e)
                 }
             }
         }
