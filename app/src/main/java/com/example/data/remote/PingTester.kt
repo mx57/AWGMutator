@@ -46,7 +46,7 @@ data class EndpointProbeResult(
  * Evaluates reachability, latency, and Anti-DPI bypass capabilities across popular blocked services
  * (YouTube, Instagram, Telegram, Twitch, X/Twitter, Discord) via HTTP HEAD and raw TCP/UDP handshakes.
  */
-class PingTester(
+open class PingTester(
     private val client: OkHttpClient = OkHttpClient.Builder()
         .connectTimeout(1500, TimeUnit.MILLISECONDS)
         .readTimeout(1500, TimeUnit.MILLISECONDS)
@@ -126,7 +126,7 @@ class PingTester(
      * Sends a real UDP WireGuard Noise Handshake Initiation packet directly to the IP and port.
      * Prevents false positives from ICMP ping or TCP 443 web connections on blocked UDP Anycast endpoints.
      */
-    suspend fun testEndpoint(
+    open suspend fun testEndpoint(
         endpoint: String,
         peerPublicKey: String = com.example.util.WireGuardProbe.DEFAULT_CLOUDFLARE_WARP_PUBKEY,
         clientPrivateKey: String? = null,
@@ -280,8 +280,17 @@ class PingTester(
     }
 
     internal fun isValidHost(host: String): Boolean {
-        if (host.isBlank() || host.length > 253 || host.startsWith("-")) {
+        if (host.isBlank() || host.length > 253) {
             return false
+        }
+        if (host.trim() != host) {
+            return false
+        }
+        if (host.startsWith("-") || host.startsWith("/")) {
+            return false
+        }
+        if (host.all { it in '0'..'9' || it == '.' }) {
+            return isValidIpv4(host)
         }
         return isValidIpv4(host) || isValidIpv6(host) || isValidHostname(host)
     }
@@ -290,7 +299,11 @@ class PingTester(
         val parts = host.split('.')
         if (parts.size != 4) return false
         return parts.all { part ->
-            part.isNotEmpty() && part.length <= 3 && part.all { it.isDigit() } && part.toIntOrNull() in 0..255
+            part.isNotEmpty() &&
+            part.length <= 3 &&
+            part.all { it in '0'..'9' } &&
+            (part == "0" || !part.startsWith("0")) &&
+            part.toIntOrNull() in 0..255
         }
     }
 
@@ -298,18 +311,59 @@ class PingTester(
         if (!host.contains(':')) return false
         if (host.count { it == ':' } > 7) return false
         if (host.contains(":::")) return false
-        val firstDoubleColon = host.indexOf("::")
-        if (firstDoubleColon != -1 && host.indexOf("::", firstDoubleColon + 1) != -1) return false
-        return host.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' || it == ':' || it == '.' }
+
+        if (!host.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' || it == ':' || it == '.' }) {
+            return false
+        }
+
+        val doubleColonIndex = host.indexOf("::")
+        if (doubleColonIndex != -1 && host.indexOf("::", doubleColonIndex + 1) != -1) {
+            return false
+        }
+
+        if (doubleColonIndex == -1) {
+            if (host.startsWith(":") || host.endsWith(":")) return false
+            val parts = host.split(':')
+            if (parts.size !in 3..8) return false
+            return validateIpv6Segments(parts)
+        } else {
+            val left = host.substring(0, doubleColonIndex)
+            val right = host.substring(doubleColonIndex + 2)
+
+            val leftParts = if (left.isEmpty()) emptyList() else left.split(':')
+            val rightParts = if (right.isEmpty()) emptyList() else right.split(':')
+
+            if (leftParts.any { it.isEmpty() } || rightParts.any { it.isEmpty() }) return false
+            if (leftParts.size + rightParts.size > 7) return false
+
+            return validateIpv6Segments(leftParts) && validateIpv6Segments(rightParts)
+        }
+    }
+
+    private fun validateIpv6Segments(parts: List<String>): Boolean {
+        for (i in parts.indices) {
+            val part = parts[i]
+            if (i == parts.lastIndex && part.contains('.')) {
+                if (!isValidIpv4(part)) return false
+            } else {
+                if (part.isEmpty() || part.length > 4) return false
+                if (!part.all { it in '0'..'9' || it in 'a'..'f' || it in 'A'..'F' }) return false
+            }
+        }
+        return true
     }
 
     private fun isValidHostname(host: String): Boolean {
         val labels = host.split('.')
         if (labels.any { it.isEmpty() || it.length > 63 }) return false
+        if (labels.size > 1 && labels.last().all { it in '0'..'9' }) return false
         return labels.all { label ->
-            label.first().isLetterOrDigit() &&
-            label.last().isLetterOrDigit() &&
-            label.all { it.isLetterOrDigit() || it == '-' }
+            val first = label.first()
+            val last = label.last()
+            val isFirstValid = (first in 'a'..'z') || (first in 'A'..'Z') || (first in '0'..'9')
+            val isLastValid = (last in 'a'..'z') || (last in 'A'..'Z') || (last in '0'..'9')
+            val isBodyValid = label.all { (it in 'a'..'z') || (it in 'A'..'Z') || (it in '0'..'9') || it == '-' }
+            isFirstValid && isLastValid && isBodyValid
         }
     }
 
