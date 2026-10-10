@@ -26,6 +26,12 @@
         android:roundIcon="@mipmap/ic_launcher_round"
         android:supportsRtl="true"
         android:theme="@style/Theme.MyApplication">
+        <!--
+            MainActivity must be exported (android:exported="true") because it is
+            the main entry point (MAIN/LAUNCHER) for the application required by
+            the Android OS system launcher (Android 12+ / API 31+ requirement).
+            All other components remain unexported (android:exported="false").
+        -->
         <activity
             android:name=".MainActivity"
             android:exported="true"
