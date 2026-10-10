@@ -346,7 +346,7 @@ class AppTrafficTracker(
         val deltaSeconds = ((currentTime - lastSampleTime) / 1000.0).coerceIn(0.4, 5.0)
 
         val splitMode = splitTunnelManager.mode
-        val selectedPackages = splitTunnelManager.getSelectedPackages()
+        val selectedPackages = splitTunnelManager.getSelectedPackages().toSet()
 
         // 1. Gather stats from VPN NetworkStatsManager
         val vpnNsmMap = queryVpnNetworkStats()

@@ -50,4 +50,25 @@ class AppTrafficTrackerBenchmarkTest {
         val avgMs = (totalNs.toDouble() / iterations) / 1_000_000.0
         println("Benchmark AppTrafficTracker.cacheInstalledApps average time over $iterations runs: $avgMs ms")
     }
+
+    @Test
+    fun benchmarkSampleTunnelTraffic() {
+        val method = AppTrafficTracker::class.java.getDeclaredMethod("sampleTunnelTraffic")
+        method.isAccessible = true
+
+        // Warmup
+        for (i in 0 until 10) {
+            method.invoke(tracker)
+        }
+
+        val iterations = 1000
+        val totalNs = measureNanoTime {
+            for (i in 0 until iterations) {
+                method.invoke(tracker)
+            }
+        }
+
+        val avgMs = (totalNs.toDouble() / iterations) / 1_000_000.0
+        println("Benchmark AppTrafficTracker.sampleTunnelTraffic average time over $iterations runs: $avgMs ms")
+    }
 }
