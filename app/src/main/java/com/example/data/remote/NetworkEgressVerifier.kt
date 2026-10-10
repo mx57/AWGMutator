@@ -2,12 +2,16 @@ package com.example.data.remote
 
 import com.example.domain.model.NetworkEgressResult
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.channels.Channel
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.net.DatagramPacket
 import java.net.DatagramSocket
 import java.net.InetAddress
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
 /**
@@ -163,8 +167,9 @@ class NetworkEgressVerifier(
         return null
     }
 
-    private fun checkDnsResolution(): Boolean {
-        val servers = listOf("1.1.1.1", "8.8.8.8", "77.88.8.8")
+    internal suspend fun checkDnsResolution(
+        servers: List<String> = listOf("1.1.1.1", "8.8.8.8", "77.88.8.8")
+    ): Boolean = coroutineScope {
         val query = byteArrayOf(
             0x12, 0x34, 0x01, 0x00, 0x00, 0x01, 0x00, 0x00,
             0x00, 0x00, 0x00, 0x00,
@@ -191,7 +196,68 @@ class NetworkEgressVerifier(
                 safeLog("DNS_PROBE", "UDP $server:53 DNS probe failed: ${e.message}")
             }
         }
-        return false
+        var completed = 0
+        var success = false
+        while (completed < servers.size) {
+            val res = channel.receive()
+            completed++
+            if (res) {
+                success = true
+                jobs.forEach { it.cancel() }
+                activeSockets.forEach { runCatching { it.close() } }
+                break
+            }
+        }
+        activeSockets.forEach { runCatching { it.close() } }
+        success
+    }
+
+    private fun probeSingleDnsServer(
+        serverSpec: String,
+        query: ByteArray,
+        activeSockets: MutableSet<DatagramSocket>
+    ): Boolean {
+        var socket: DatagramSocket? = null
+        return try {
+            val host: String
+            val port: Int
+            if (serverSpec.contains(":")) {
+                val parts = serverSpec.split(":")
+                host = parts[0]
+                port = parts[1].toIntOrNull() ?: 53
+            } else {
+                host = serverSpec
+                port = 53
+            }
+            val ds = DatagramSocket()
+            socket = ds
+            activeSockets.add(ds)
+            ds.soTimeout = 2000
+            val pkt = DatagramPacket(query, query.size, InetAddress.getByName(host), port)
+            ds.send(pkt)
+            val respBuf = ByteArray(512)
+            val respPkt = DatagramPacket(respBuf, respBuf.size)
+            ds.receive(respPkt)
+            val ok = respPkt.length > 12
+            if (ok) {
+                log("DNS_PROBE", "UDP $serverSpec DNS probe -> Received ${respPkt.length}B (Functional=true)")
+                true
+            } else false
+        } catch (e: Exception) {
+            log("DNS_PROBE", "UDP $serverSpec DNS probe failed: ${e.message}")
+            false
+        } finally {
+            socket?.let {
+                activeSockets.remove(it)
+                runCatching { if (!it.isClosed) it.close() }
+            }
+        }
+    }
+
+    private fun log(tag: String, message: String) {
+        runCatching {
+            com.example.App.instance.tunnelManager.log(tag, message)
+        }
     }
 
     private fun safeLog(tag: String, message: String) {

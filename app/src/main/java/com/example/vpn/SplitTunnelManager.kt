@@ -84,6 +84,10 @@ class SplitTunnelManager(private val context: Context) {
             )
         }
 
+        val installedAppMap = runCatching { pm.getInstalledApplications(0) }
+            .getOrDefault(emptyList())
+            .associateBy { it.packageName }
+
         // Add any selected packages or popular packages
         val extraPackages = getSelectedPackages() + listOf(
             "com.google.android.youtube",
@@ -91,17 +95,10 @@ class SplitTunnelManager(private val context: Context) {
             "org.telegram.messenger"
         )
 
-        val installedAppMap by lazy {
-            runCatching { pm.getInstalledApplications(0) }
-                .getOrDefault(emptyList())
-                .associateBy { it.packageName }
-        }
-
         for (pkg in extraPackages) {
             if (seenPackages.add(pkg)) {
-                val appInfo = installedAppMap[pkg]
-                    ?: runCatching { pm.getApplicationInfo(pkg, 0) }.getOrNull()
-                if (appInfo != null && appInfo.packageName != context.packageName) {
+                val appInfo = installedAppMap[pkg] ?: continue
+                if (appInfo.packageName != context.packageName) {
                     val appName = appInfo.nonLocalizedLabel?.toString()
                         ?: runCatching { pm.getApplicationLabel(appInfo).toString() }.getOrNull()
                         ?: formatAppName(pkg)
